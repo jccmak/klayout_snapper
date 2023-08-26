@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Space Instances Vertical</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut>Alt+Shift+A</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>instances</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_cells_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+space_instances_y
+snapper v0.0.1
+Copyright 2023 Jason Mak
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+
+Space out instances vertically
+'''
+
+import pya
+import snapper.utils as utils
+
+lv = pya.Application.instance().main_window().current_view()
+layout = lv.active_cellview().layout()
+cell = lv.active_cellview().cell
+
+object_selection = list(lv.object_selection) #important to ensure ordering stays as expected
+object_selection = sorted(object_selection, key =lambda x: x.seq)
+# Enter your Python code here
+
+#space in x-axis
+#space by 10 um
+space = round(float(pya.Application.instance().get_config("array-buffer"))/layout.dbu)
+
+#get the initial relative positions of the objects
+instances = []
+for sel_obj in object_selection:
+  if sel_obj.is_cell_inst():
+    instances.append(sel_obj.inst())
+
+
+lv.transaction("space instances vertical")
+if len(object_selection):
+
+
+  parsed_objects = []
+  for so in object_selection:
+    if so.is_cell_inst():
+      parsed_objects.append((so.inst(), so.inst().bbox()))
+    else:
+      parsed_objects.append((so.shape, so.shape.bbox()))
+  
+  objects_ordered = sorted(parsed_objects, key = lambda x: x[1].center().x)
+  
+  #calculate the required displacements
+  current_cursor = objects_ordered[0][1].p2.y
+  
+  for i in range(1,len(objects_ordered)):
+    dy = objects_ordered[i][1].p1.y - current_cursor - space
+    t = pya.Trans(0, -dy)
+    objects_ordered[i][0].transform(t)
+    current_cursor =  objects_ordered[i][0].bbox().p2.y
+    
+lv.commit()</text>
+</klayout-macro>

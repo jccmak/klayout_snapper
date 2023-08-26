@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Edit Top Level Selection Off</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Shift+/</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name/>
+ <menu-path>snapper_menu.selection_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+edit_top_level_selection_off
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+
+
+Toggles Object Editor Options &gt; Basic Editing &gt; Objects &gt; Sanp to other objects
+
+OFF
+
+'''
+
+import pya
+
+# Enter your Python code here ..
+
+## This is a template for toggling rcparams
+param_name = 'edit-top-level-selection'
+
+#current = pya.Application.instance().get_config(param_name)
+#if current.lower() == 'true':
+#  pya.Application.instance().set_config(param_name, 'false')
+#else:
+#  pya.Application.instance().set_config(param_name, 'true')
+pya.Application.instance().set_config(param_name, 'false')</text>
+</klayout-macro>

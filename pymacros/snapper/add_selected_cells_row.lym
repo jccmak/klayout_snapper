@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Add selected cells as instances (row)</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Alt+-</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>instances</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_cells_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+add_selected_cells_col
+snapper v 0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+
+Add selected cells as instances in a column to the current layout
+
+Assumptions
+----------
+
+Inputs
+----------
+
+Selected object (optional)
+Selected cells in cell hierarchy
+
+
+Behaviour
+----------
+Create instances in a column using the selected object's bounding box as a reference for spacing and position
+
+See also
+----------
+add_selected_cells_row
+add_selected_cells_col
+'''
+
+import pya
+
+
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+cell = lv.active_cellview().cell
+
+#select
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+cell = lv.active_cellview().cell
+
+cell_paths = lv.selected_cells_paths(lv.active_cellview().index())
+selected_cell_indices = [cp[-1] for cp in cell_paths]
+
+dbu = ly.dbu
+#spacing
+x_trans = 10*round(float(pya.Application.instance().get_config("wg-width"))/dbu)
+
+
+
+object_selection = list(lv.object_selection) #important to ensure ordering stays as expected, or else may behave like a set?
+
+if len(object_selection)&gt;0:
+  
+  obj_ref = object_selection[-1] #reference point
+  bbox_ref = obj_ref.shape.bbox()
+  
+  cursor =  pya.ICplxTrans(bbox_ref.center())
+  spacing = bbox_ref.width() + x_trans
+else:
+  cursor = pya.ICplxTrans(pya.Point(0,0))
+  spacing = x_trans
+
+#################
+# Transaction
+#################
+ 
+lv.transaction("add selected cells (ro)")  
+
+for sci in selected_cell_indices:
+  trans = pya.ICplxTrans(pya.Point(abs(ly.cell(sci).bbox().p1.x) + spacing,0))
+  cursor = cursor*trans    
+  
+  ie = cell.insert(pya.CellInstArray(sci, cursor))
+  #ie_bbox = ie.bbox()
+  
+  trans = pya.ICplxTrans(pya.Point(abs(ie.cell.bbox().p2.x) + spacing,0))
+  cursor = cursor*trans  
+lv.commit()</text>
+</klayout-macro>

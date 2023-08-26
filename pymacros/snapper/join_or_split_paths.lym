@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Join/Split paths</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>J</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>routing</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_routing_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+join_or_split_paths
+snapper v 0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+Assumptions
+----------
+
+Path object includes Path, PCells with Path Guiding Shapes, Path Guiding Shape
+
+Inputs
+----------
+Situation dependent:
+
+1) 1 selected path object, and cursor location
+2) 2 selected path objects
+
+
+Behaviour
+----------
+1) Cleave the path at the location on the path closest to the grid point closest to cursor
+
+1) Join the 2 selected paths
+
+'''
+
+
+import pya
+import snapper.utils as utils
+
+
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+topcell = lv.active_cellview().cell
+
+object_selection = list(lv.object_selection) #important to ensure ordering stays as expected
+object_selection = sorted(object_selection, key = lambda x: x.seq)
+
+######
+# Transaction
+######
+
+
+lv.transaction("join paths")
+#case selection for number of objects
+if len(object_selection) == 1:
+  sel_obj = object_selection[0]
+  if not sel_obj.is_cell_inst() and sel_obj.shape.is_path():
+  
+    sel_shape = sel_obj.shape
+    path_sel = sel_shape.path
+    
+    p_c = utils.cursor_position(True, True, True)
+    
+    idx_min, point_min, end_flag, t_min, val_min = utils.closest_path_segment_to_point(p_c, path_sel)
+    
+    if not end_flag:
+      path_points = [pp for pp in path_sel.each_point()]
+      path_front_points = path_points[:idx_min+1] + [point_min]
+      path_back_points = [point_min] + path_points[idx_min+1:]
+      
+      path_front = pya.Path(path_front_points, path_sel.width)
+      path_back = pya.Path(path_back_points, path_sel.width)
+      
+      sel_shape.cell.shapes(sel_shape.layer).insert(path_front)
+      sel_shape.cell.shapes(sel_shape.layer).insert(path_back)
+      
+      #delete the original shape
+      sel_shape.delete()
+      
+      lv.object_selection = [] #deselect everything, to avoid errors
+      
+elif len(object_selection) &gt; 1:              
+  fix_obj = object_selection[1] 
+  move_obj = object_selection[0] 
+  
+  #both of the selections should be paths
+  
+  path_fixed = fix_obj.shape.path
+  move_path = move_obj.shape.path
+  
+  path_points_fixed = list(path_fixed.each_point())
+  path_points_move = list(move_path.each_point())
+  
+  path_ends_fixed = [path_points_fixed[0], path_points_fixed[-1]]
+  path_ends_move = [path_points_move[0], path_points_move[-1]]
+  
+  paths_ends_idx_fixed = [0, len(path_points_fixed)-1]
+  paths_ends_idx_move = [0, len(path_points_move)-1]
+  
+  #path_ends_fixed, path_ends_idx_fixed, path_points_fixed = path_points(fix_obj)
+  #path_ends_move, path_ends_idx_move, path_points_move = path_points(move_obj)
+  
+  #find the minimum distances between the two paths
+  
+  
+  idx_fixed, idx_move, min_dist, min_dist_trans = utils.closest_points(path_ends_fixed, path_ends_move)
+  
+  #apply appropriate re-ordering of points
+  if idx_fixed == 0:
+    path_points_fixed = path_points_fixed[::-1]
+  if idx_move == 1:
+    path_points_move = path_points_move[::-1]
+  
+  #check if end points are the same, omit the joining point
+  if path_points_fixed[-1] == path_points_move[0]:
+    path_points_fixed = path_points_fixed[:-1]
+    path_points_move = path_points_move[1:]
+    
+  path_fixed.points = list(path_points_fixed) + list(path_points_move)
+  
+  #update fix_obj with the new path, delete the other joined path (fix_obj still selected)
+  fix_obj.shape.path = path_fixed
+  move_obj.shape.delete()
+  
+  lv.object_selection = [fix_obj] #refresh selection to avoid pointer errors
+
+lv.commit()</text>
+</klayout-macro>

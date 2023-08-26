@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Flatten selected paths</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut>Alt+G</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>routing</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_routing_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+flatten_paths
+snapper v0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+
+In selection, if any paths present, convert them to polygons or boxes.
+
+'''
+
+import pya
+
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+topcell = lv.active_cellview().cell
+#Turn selected path to poly or box
+# Enter your Python code here
+
+object_selection = lv.object_selection
+new_selection = []
+
+for sel_obj in object_selection:
+  if not sel_obj.is_cell_inst() and sel_obj.shape.is_path():
+  
+  #turn all paths into their poly
+    sel_shape = sel_obj.shape
+    sel_path = sel_shape.path
+
+#################
+# Transaction
+#################
+    lv.transaction("flatten paths")
+    
+    if sel_path.points &lt;= 2:
+      sel_shape.box = sel_shape.bbox()#if a simple segment, turn it into a box
+    else:
+      sel_shape.polygon = sel_shape.polygon #converts to polygon
+      
+    lv.commit()
+</text>
+</klayout-macro>

@@ -1,0 +1,473 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Snapper Options Menu</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut>F4</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name/>
+ <menu-path>snapper_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+Options menu for snapper parameters
+
+snapper v0.0.1
+Copyright 2023 Jason Mak
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+'''
+import pya
+
+class OptionsEditor(pya.QDialog_Native):
+  #fixed width and heights
+  width = 500#500 #revise to adjust based on window resolution
+  height = 400#350#170
+  
+  #functions for setting values to configs
+  config_setters = []
+  
+  #functions for loading values from configs
+  config_getters = [] 
+  def  __init__(self):
+    super().__init__()
+    self.windowTitle = "Snapper Options"
+    self.resize(self.width, self.height)
+    
+    layout_main = pya.QBoxLayout(pya.QBoxLayout_Direction(2), self) #top to bottom
+    self.setLayout(layout_main)
+    
+    self.elements_waveguides = self._draw_layout_waveguides(layout_main)
+
+    
+    self.elements_snap = self._draw_layout_snap(layout_main)
+
+    
+    
+    self.elements_array = self._draw_layout_array(layout_main)
+    
+
+          
+    
+    ## Buttons
+    layout_main.addSpacing(10)
+    self.elements_buttons = self._draw_layout_buttons(layout_main)
+    
+    
+    ### Load configs
+    for g in self.config_getters:
+      g()
+
+  def _draw_layout_waveguides(self, layout_main):
+### Waveguide Options
+    elements = {}
+    layout_waveguides = pya.QVBoxLayout(self)
+    layout_waveguides1 = pya.QHBoxLayout(self)
+    layout_waveguides2 = pya.QHBoxLayout(self)
+    
+    layout_waveguides.addLayout(layout_waveguides1)
+    layout_waveguides.addLayout(layout_waveguides2)
+    groupbox = pya.QGroupBox("Waveguide Defaults", self)
+    groupbox.setLayout(layout_waveguides)
+    layout_main.addWidget(groupbox)
+    elements['layout'] = layout_waveguides          
+    elements['groupbox'] = groupbox
+    
+    #WG Width, WG Radius, Default Points
+    #self.layout_row1_wg = pya.QHBoxLayout(self)
+    #self.layout_waveguides.addLayout(self.layout_row1_wg)
+  
+    lv = pya.Application.instance().main_window().current_view()
+    ly = lv.active_cellview().layout()
+    
+    label_layer = pya.QLabel(self)
+    label_layer.text = 'Layer'
+    layout_waveguides1.addWidget(label_layer)
+    cb_layer = pya.QComboBox(self)
+    for ll in lv.each_layer():
+      cb_layer.addItem("%d/%d"%(ll.source_layer, ll.source_datatype))
+    layout_waveguides1.addWidget(cb_layer)
+    layout_waveguides1.addSpacing(20)
+    elements['label_layer'] = label_layer
+    elements['cb_layer'] = cb_layer
+  
+    
+  
+  
+    label_bendcell = pya.QLabel(self)
+    label_bendcell.text = 'Bend Cell'
+    layout_waveguides1.addWidget(label_bendcell)
+    lineedit_bendcell = pya.QLineEdit(self)
+    layout_waveguides1.addWidget(lineedit_bendcell)
+    layout_waveguides1.addSpacing(20)
+    elements['label_bendcell'] = label_bendcell
+    elements['lineedit_bendcell'] = lineedit_bendcell
+  
+  
+    label_wgwidth = pya.QLabel(self)
+    label_wgwidth.text = 'Width'
+    layout_waveguides2.addWidget(label_wgwidth)
+    lineedit_wgwidth = pya.QLineEdit(self)
+    layout_waveguides2.addWidget(lineedit_wgwidth)
+    layout_waveguides2.addSpacing(20)
+    elements['label_wgwidth'] = label_wgwidth
+    elements['lineedit_wgwidth'] = lineedit_wgwidth
+  
+    label_wgcl = pya.QLabel(self)
+    label_wgcl.text = 'Clearance'
+    layout_waveguides2.addWidget(label_wgcl)
+    lineedit_wgcl = pya.QLineEdit(self)
+    layout_waveguides2.addWidget(lineedit_wgcl)
+    layout_waveguides2.addSpacing(20)
+    elements['label_wgwidth'] = label_wgwidth
+    elements['lineedit_cl'] = lineedit_wgcl
+    
+    label_radius = pya.QLabel(self)
+    label_radius.text = 'Radius'
+    layout_waveguides2.addWidget(label_radius)
+    lineedit_radius = pya.QLineEdit(self)
+    layout_waveguides2.addWidget(lineedit_radius)
+    layout_waveguides2.addSpacing(20)
+    elements['label_radius'] = label_radius
+    elements['lineedit_radius'] = lineedit_radius                 
+    
+  
+    label_np = pya.QLabel(self)
+    label_np.text = 'N'
+    layout_waveguides2.addWidget(label_np)
+    lineedit_np = pya.QLineEdit(self)
+    layout_waveguides2.addWidget(lineedit_np)
+    layout_waveguides2.addSpacing(20)               
+    elements['label_numpoints'] = label_np
+    elements['lineedit_numpoints'] = lineedit_np
+    
+    
+    params_tuples = [('bend-radius',lineedit_radius), 
+                 ("wg-width",lineedit_wgwidth),
+                 ("wg-clearance",lineedit_wgcl),
+                 ("bend-cell", lineedit_bendcell),
+                 ("bend-points",lineedit_np)]
+    def getter():
+        instance = pya.Application.instance()
+        for k,v in params_tuples:
+            v.text = str(instance.get_config(k))
+            
+        #combobox
+        idx = cb_layer.findText(instance.get_config("wg-layer"))
+        cb_layer.currentIndex = idx
+          
+        return None
+    def setter():
+        instance = pya.Application.instance()
+        for k,v in params_tuples:
+            instance.set_config(k, v.text)
+            
+        #combo box
+        instance.set_config("wg-layer", cb_layer.currentText)
+        
+        
+        lv = pya.Application.instance().main_window().current_view()
+        ly = lv.active_cellview().layout()
+                  
+        #check bend cell validity. Warn if invalid
+        cell_idx = None
+        for cc in ly.each_cell():
+          if cc.name == lineedit_bendcell.text:
+            cell_idx = cc.cell_index
+        if cell_idx is None:
+          dialog = pya.QDialog()
+          #dialog.windowTitle = "My Dialog" 
+          pya.QMessageBox.information(dialog, "Warning", "No matching Bend Cell found")
+          instance.set_config("bend-cell", "")
+            
+    self.config_getters.append(getter)
+    self.config_setters.append(setter)            
+    
+    
+    layout_main.addLayout(layout_waveguides) #order somehow matters in the construction. Add the layout after it has all been configured.
+    
+    return elements 
+
+
+  def _draw_layout_snap(self, layout_main):
+    
+    elements = {}
+    layout = pya.QHBoxLayout(self)
+    groupbox = pya.QGroupBox("Snap", self)
+    groupbox.setLayout(layout)
+    layout_main.addWidget(groupbox)
+    elements['layout'] = layout          
+    elements['groupbox'] = groupbox
+    
+    
+    label_edge_min = pya.QLabel(self)
+    label_edge_min.text = 'Edge Width Min'
+    layout.addWidget(label_edge_min)
+    lineedit_edge_min = pya.QLineEdit(self)
+    layout.addWidget(lineedit_edge_min)
+    layout.addSpacing(10)
+    elements['label_edge_min'] = label_edge_min
+    elements['lineedit_edge_min'] = lineedit_edge_min
+    
+    label_copyedge = pya.QLabel(self)
+    label_copyedge.text = 'Copy Width'
+    layout.addWidget(label_copyedge)
+    cbox_copyedge= pya.QCheckBox(self)
+    layout.addWidget(cbox_copyedge)
+    layout.addSpacing(400)
+    elements['label_copyedge'] = label_copyedge
+    elements['cbox_copyedge'] = cbox_copyedge
+    
+    label_portlayer = pya.QLabel(self)
+    label_portlayer.text = 'Port Layer'
+    #          label_annotationsize.setFixedWidth(80)
+    layout.addWidget(label_portlayer)
+    lineedit_portlayer = pya.QLineEdit(self)
+    #          lineedit_annotationsize.setFixedWidth(50)
+    layout.addWidget(lineedit_portlayer)
+    layout.addSpacing(20)
+    elements['label_portlayer'] = label_portlayer
+    elements['lineedit_portlayer'] = lineedit_portlayer
+    
+    def getter():
+        instance = pya.Application.instance()
+        lineedit_edge_min.text = str(instance.get_config('snap-edge-min'))
+        lineedit_portlayer.text = str(instance.get_config('port-layer'))
+    
+        checked = (str(instance.get_config('copy-edge-width')).lower() == "true")
+        if checked:
+          cbox_copyedge.checkState = pya.Qt_CheckState.Checked
+        else:
+          cbox_copyedge.checkState = pya.Qt_CheckState.Unchecked
+    
+    def setter():
+        instance = pya.Application.instance()
+        instance.set_config('snap-edge-min', lineedit_edge_min.text)
+        instance.set_config('port-layer', lineedit_portlayer.text)
+        instance.set_config('copy-edge-width', str(cbox_copyedge.checkState == pya.Qt_CheckState.Checked))
+    
+    self.config_getters.append(getter)
+    self.config_setters.append(setter)            
+    
+    
+    layout_main.addLayout(layout) #order somehow matters in the construction. Add the layout after it has all been configured.
+    
+    return elements 
+
+  def _draw_layout_array(self, layout_main):
+    
+    elements = {}
+    layout = pya.QHBoxLayout(self)
+    groupbox = pya.QGroupBox("Arrays", self)
+    groupbox.setLayout(layout)
+    layout_main.addWidget(groupbox)
+    elements['layout'] = layout          
+    elements['groupbox'] = groupbox
+    
+    #WG Width, WG Radius, Default Points
+    #self.layout_row1_wg = pya.QHBoxLayout(self)
+    #self.layout_waveguides.addLayout(self.layout_row1_wg)
+    
+    label_pitch = pya.QLabel(self)
+    label_pitch.text = 'Pitch'
+    layout.addWidget(label_pitch)
+    lineedit_pitch = pya.QLineEdit(self)
+    layout.addWidget(lineedit_pitch)
+    layout.addSpacing(20)
+    elements['label_pitch'] = label_pitch
+    elements['lineedit_pitch'] = lineedit_pitch
+    
+    label_buffer = pya.QLabel(self)
+    label_buffer.text = 'Buffer'
+    layout.addWidget(label_buffer)
+    lineedit_buffer = pya.QLineEdit(self)
+    layout.addWidget(lineedit_buffer)
+    layout.addSpacing(20)
+    elements['label_buffer'] = label_buffer
+    elements['lineedit_buffer'] = lineedit_buffer
+    
+    label_arrayN = pya.QLabel(self)
+    label_arrayN.text = 'Array N'
+    layout.addWidget(label_arrayN)
+    lineedit_arrayN = pya.QLineEdit(self)
+    layout.addWidget(lineedit_arrayN)
+    layout.addSpacing(20)
+    elements['label_arrayN'] = label_arrayN
+    elements['lineedit_arrayN'] = lineedit_arrayN
+    
+              
+    params_tuples = [('array-pitch',lineedit_pitch), 
+                 ("array-buffer",lineedit_buffer), 
+                 ("periodic-array-instances",lineedit_arrayN)]
+    def getter():
+        instance = pya.Application.instance()
+        for k,v in params_tuples:
+            v.text = str(instance.get_config(k))
+        return None
+    def setter():
+        instance = pya.Application.instance()
+        for k,v in params_tuples:
+            instance.set_config(k, v.text)
+            
+    self.config_getters.append(getter)
+    self.config_setters.append(setter)            
+    
+    
+    layout_main.addLayout(layout) #order somehow matters in the construction. Add the layout after it has all been configured.
+    
+    return elements           
+  def _draw_layout_misc(self, layout_main):
+    ### Cell Array with Random Spaced Connectors
+    elements = {}
+    layout = pya.QHBoxLayout(self)
+    groupbox = pya.QGroupBox("Misc. Settings", self)
+    groupbox.setLayout(layout)
+    layout_main.addWidget(groupbox)
+    elements['layout'] = layout          
+    elements['groupbox'] = groupbox
+    
+    #WG Width, WG Radius, Default Points
+    #self.layout_row1_wg = pya.QHBoxLayout(self)
+    #self.layout_waveguides.addLayout(self.layout_row1_wg)
+    
+    label_annotationsize = pya.QLabel(self)
+    label_annotationsize.text = 'Annotation Size'
+    #          label_annotationsize.setFixedWidth(80)
+    layout.addWidget(label_annotationsize)
+    lineedit_annotationsize = pya.QLineEdit(self)
+    #          lineedit_annotationsize.setFixedWidth(50)
+    layout.addWidget(lineedit_annotationsize)
+    layout.addSpacing(20)
+    elements['label_annotationsize'] = label_annotationsize
+    elements['lineedit_annotationsize'] = lineedit_annotationsize
+    
+    label_highlightlayer = pya.QLabel(self)
+    label_highlightlayer.text = 'Highlight Layer'
+    #          label_annotationsize.setFixedWidth(80)
+    layout.addWidget(label_highlightlayer)
+    lineedit_highlightlayer = pya.QLineEdit(self)
+    #          lineedit_annotationsize.setFixedWidth(50)
+    layout.addWidget(lineedit_highlightlayer)
+    layout.addSpacing(20)
+    elements['label_highlightlayer'] = label_highlightlayer
+    elements['lineedit_highlightlayer'] = lineedit_highlightlayer 
+    
+    
+    label_copyedge = pya.QLabel(self)
+    label_copyedge.text = 'Copy Width'
+    layout.addWidget(label_copyedge)
+    cbox_copyedge= pya.QCheckBox(self)
+    layout.addWidget(cbox_copyedge)
+    layout.addSpacing(400)
+    elements['label_copyedge'] = label_copyedge
+    elements['cbox_copyedge'] = cbox_copyedge                     
+    
+    label_portlayer = pya.QLabel(self)
+    label_portlayer.text = 'Port Layer'
+    #          label_annotationsize.setFixedWidth(80)
+    layout.addWidget(label_portlayer)
+    lineedit_portlayer = pya.QLineEdit(self)
+    #          lineedit_annotationsize.setFixedWidth(50)
+    layout.addWidget(lineedit_portlayer)
+    layout.addSpacing(20)
+    elements['label_portlayer'] = label_portlayer
+    elements['lineedit_portlayer'] = lineedit_portlayer 
+    
+    
+              
+    params_tuples = [('annotation-mag',lineedit_annotationsize),
+    ('highlight-layer', lineedit_highlightlayer),
+    ('port-layer', lineedit_portlayer)]
+    def getter():
+        instance = pya.Application.instance()
+        for k,v in params_tuples:
+            v.text = str(instance.get_config(k))
+            
+        checked = (str(instance.get_config('copy-edge-width')).lower() == "true")
+        if checked:
+          cbox_copyedge.checkState = pya.Qt_CheckState.Checked
+        else:
+          cbox_copyedge.checkState = pya.Qt_CheckState.Unchecked
+            
+        return None
+    def setter():
+        instance = pya.Application.instance()
+        for k,v in params_tuples:
+            instance.set_config(k, v.text)
+        instance.set_config('copy-edge-width', str(cbox_copyedge.checkState == pya.Qt_CheckState.Checked))
+                          
+    self.config_getters.append(getter)
+    self.config_setters.append(setter)            
+    
+    
+    layout_main.addLayout(layout) #order somehow matters in the construction. Add the layout after it has all been configured.
+    
+    return elements 
+          
+  def _draw_layout_buttons(self, layout_main):
+   
+    elements = {}
+     
+    layout_row_buttons = pya.QHBoxLayout(self)
+    layout_row_buttons.addSpacing(self.width/2)
+    elements['layout'] = layout_row_buttons
+    
+    button_apply = pya.QPushButton(self)
+    button_apply.text = "Apply"
+    button_apply.clicked = self.clicked_apply
+    button_apply.setAutoDefault(False)
+    layout_row_buttons.addWidget(button_apply)
+    elements['button_apply'] = button_apply
+    
+    button_ok = pya.QPushButton(self)
+    button_ok.text = "OK"
+    button_ok.clicked = self.clicked_ok
+    button_ok.setAutoDefault(True)
+    layout_row_buttons.addWidget(button_ok)
+    elements['button_ok'] = button_ok   
+    
+    button_cancel = pya.QPushButton(self)
+    button_cancel.text = "Cancel"
+    button_cancel.clicked = self.clicked_cancel
+    layout_row_buttons.addWidget(button_cancel)
+    elements['button_cancel'] = button_cancel   
+    
+    layout_main.addLayout(layout_row_buttons)
+    return elements
+
+  def  clicked_apply(self):
+#          print("clicked apply")
+    for s in self.config_setters:
+      s()
+            
+  def  clicked_ok(self):
+#          print("clicked ok")
+    for s in self.config_setters:
+      s()            
+    self.close()
+
+  def  clicked_cancel(self):
+#          print("clicked canceled")
+    self.close()
+          
+          
+           
+widget = OptionsEditor()#pya.Application.instance().main_window()) #
+pya.QApplication.processEvents()
+widget.show()
+</text>
+</klayout-macro>

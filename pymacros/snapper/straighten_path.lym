@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Straighten path</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Ctrl+J</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>routing</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_routing_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+straighten_path
+snapper v0.0.1
+Copyright 2023 Jason Mak
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+
+Ensures only Manhattan translations are within the path.
+'''
+
+#to do: remove all redundant points
+
+import pya
+import snapper.pcell as pcell
+import snapper.utils as utils
+
+# Enter your Python code here ..
+
+#modify the path to make manhattan
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+cell = lv.active_cellview().cell
+
+object_selection = list(lv.object_selection) #important to ensure ordering stays as expected
+#object_selection = sorted(object_selection, key = lambda x: x.seq)
+#if not len(object_selection) == 2:
+#  pya.MessageBox.warning("Selection invalid",
+#                               "Select only two (2) objects, first the path to snap, and second the shape to snap to.", pya.MessageBox.Ok)
+                                   
+
+
+
+if len(object_selection):
+
+  lv.transaction("straighten path")
+  for sel_obj in object_selection:
+
+    if not sel_obj.is_cell_inst() and sel_obj.shape.is_path():
+      
+       
+      path = sel_obj.shape.path
+      path_points = [pp for pp in path.each_point()]
+      new_points = []
+      
+      pointA = path_points[0]
+      
+      changed = False
+      
+      for i in range(len(path_points) - 1):
+      
+        pointB = path_points[i+1]
+        trans = pointB - pointA
+        
+        if not trans.x*trans.y == 0: #not orthogonal
+        
+          if abs(trans.x) &lt; abs(trans.y): #adjust the smaller translation
+          
+          #move the point B based on 
+            pointB.x = pointA.x
+          else:
+            pointB.y = pointA.y
+          changed = True
+        new_points.append(pointA)
+        pointA = pointB
+      
+      new_points.append(pointA)
+      
+      #remove redundant points as well
+      new_points = utils.simplify_path(new_points)
+      if len(new_points) &lt; len(path_points):
+        changed = True
+
+      
+      if changed:
+        new_path = pya.Path(path)
+        new_path.points = new_points
+        
+        sel_obj.shape.path = new_path
+        cell.refresh()
+        pcell.refresh_pcell_path(lv.object_selection[0])
+        
+        '''
+        layer = sel_obj.shape.layer
+        shape_new = cell.shapes(layer).insert(new_path)
+        
+        sel_obj_new = pya.ObjectInstPath()
+        sel_obj_new.shape = shape_new
+        sel_obj_new.layer = shape_new.layer
+        sel_obj_new.top = shape_new.cell.cell_index() 
+        
+        lv.object_selection = []
+        sel_obj.shape.delete()
+        lv.object_selection = [sel_obj_new]
+        
+        '''
+  lv.commit()
+</text>
+</klayout-macro>

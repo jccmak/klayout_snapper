@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Path-to-clearancepath</description>
+ <version>v2</version>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut>Alt+W</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>routing</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_routing_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+path_to_clearancepath
+snapper v 0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+Convert a selected path into a ClearancePath PCell
+
+'''
+
+import pya
+
+def path2clearancepath(sel_obj, verbose = False):
+  lv = pya.Application.instance().main_window().current_view()
+  ly = lv.active_cellview().layout()
+  top_cell = lv.active_cellview().cell
+ 
+ #check the selected object is a path 
+  if not sel_obj.shape.is_path() and verbose:
+    pya.MessageBox.warning("Selection not a path",
+                                 "Selection must be a path", pya.MessageBox.Ok)
+    return None                                
+  
+  sel_path = sel_obj.shape.path #this cannot directly be passed into the PCell, need to instantiate a new Path Object 
+  #ROUND_PATH only accepts DPath (but the coordinates need to be in micron). Path, and Point will not work, the PCell won't show up!
+  #https://www.klayout.de/forum/discussion/737/round-path-pcell-in-python-create-cell
+  path = pya.DPath()
+  path.points = [pya.DPoint(pp.x*ly.dbu, pp.y*ly.dbu) for pp in sel_path.each_point()] #need to get individual values to avoid rounding
+  path.width = sel_path.width*ly.dbu
+  layer_info = ly.get_info(sel_obj.layer)
+  
+  #remove the selected object
+  sel_obj.shape.delete()
+  
+  # locate the Basic library
+  lib = pya.Library.library_by_name("SnapperLib")
+  if lib == None:
+    raise Exception("Unknown lib 'SnapperLib'")
+  
+  # locate the declaration
+  pcell_decl = lib.layout().pcell_declaration("ClearancePath");
+  if pcell_decl == None:
+    raise Exception("Unknown PCell 'ClearancePath'")
+
+
+  bendradius_str = pya.Application.instance().get_config('bend-radius')
+  bendradius_float = 0
+  try:
+    bendradius_float = float(bendradius_str)
+  except:
+    pass
+    
+
+
+  wgcl_str = pya.Application.instance().get_config('wg-clearance')
+  wgcl_float = 0
+  try:
+    wgcl_float = float(wgcl_str)
+  except:
+    pass
+    
+    
+  portlayer_str = pya.Application.instance().get_config('port-layer')
+  portlayer_int = 0
+  try:
+    portlayer_int = int(portlayer_str)
+  except:
+    pass  
+  
+  # create the PCell variant parameters
+  param = { 
+    "radius":bendradius_float,          # default radius from configs
+    "l":layer_info,#pya.LayerInfo(2, 0), 
+    "lc":pya.LayerInfo(portlayer_int, 0),
+    #"npoints": int(pya.Application.instance().get_config("bend-points")),
+    #'path':path
+    "s":path,
+    "w":path.width,
+    "c":wgcl_float
+    
+  }
+  
+  pv = []
+  for p in pcell_decl.get_parameters():
+    #print(p.name)
+    if p.name in param:
+      pv.append(param[p.name])
+    else:
+      pv.append(p.default)
+      #print(p.default)
+  
+  # create and place the PCell
+  wg_cell_index = ly.add_pcell_variant(lib, pcell_decl.id(), pv) 
+
+  t = pya.Trans(pya.Trans.R0, 0, 0)
+  inst = top_cell.insert(pya.CellInstArray(wg_cell_index, t))
+  ly.cell(wg_cell_index).refresh()
+  lv.add_missing_layers() #add missing layers if an
+  
+  #select the new waveguide
+  sel_obj = pya.ObjectInstPath()
+  sel_obj.top = top_cell.cell_index()
+  ie = pya.InstElement(inst)
+  sel_obj.append_path(ie)
+  
+  #pass the selected object out: selecting here create internal problems with references 
+  #since we continue to modify other parts of the previous selection
+  #lv.select_object(sel_obj) 
+  return sel_obj
+
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+top_cell = lv.active_cellview().cell
+
+
+
+lv.transaction("path to ClearancePath")
+#get the selected path
+object_selection = lv.object_selection
+new_selection = []
+for sel_obj in object_selection:
+  if not sel_obj.is_cell_inst() and sel_obj.shape.is_path():
+    new_sel_obj = path2clearancepath(sel_obj, verbose = False)
+    if not new_sel_obj is None:
+      new_selection.append(new_sel_obj)
+
+lv.object_selection = new_selection
+lv.commit()</text>
+</klayout-macro>

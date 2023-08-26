@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Set instance array row</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>\</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>instances</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_cells_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+instance_array_row
+snapper v0.0.1
+Copyright 2023 Jason Mak
+
+Turn the selected instance into an array (horizontal)
+'''
+
+import pya
+
+lv = pya.Application.instance().main_window().current_view()
+layout = lv.active_cellview().layout()
+cell = lv.active_cellview().cell
+
+object_selection = list(lv.object_selection) #important to ensure ordering stays as expected
+object_selection = sorted(object_selection, key =lambda x: x.seq)
+
+sel_obj = object_selection[0]
+
+lv.transaction("instance array - row")
+if sel_obj.is_cell_inst():
+  
+  sel_inst = sel_obj.inst()
+  
+  N = int(pya.Application.instance().get_config("periodic-array-instances"))
+  array_pitch = float(pya.Application.instance().get_config("array-pitch"))
+  
+  
+  sel_inst.na = N #row
+  sel_inst.nb = 1 #column
+  
+  sel_inst.a = pya.DPoint(0, array_pitch)
+  sel_inst.b = pya.DPoint(array_pitch, 0)
+  
+lv.commit()</text>
+</klayout-macro>

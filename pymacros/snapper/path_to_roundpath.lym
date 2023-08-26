@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Path to round-path</description>
+ <version>v2</version>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Alt+Shift+W</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>routing</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_routing_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+path_to_roundpath
+snapper v 0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+Convert a selected path into a ROUND_PATH PCell
+
+'''
+
+import pya
+from snapper.pcell import path2roundpath
+
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+top_cell = lv.active_cellview().cell
+
+
+lv.transaction("Path to ROUND_PATH")
+#get the selected path
+object_selection = lv.object_selection
+new_selection = []
+for sel_obj in object_selection:
+  if not sel_obj.is_cell_inst() and sel_obj.shape.is_path():
+    new_sel_obj = path2roundpath(sel_obj, verbose = False)
+    if not new_sel_obj is None:
+      new_selection.append(new_sel_obj)
+
+lv.object_selection = new_selection
+lv.commit()</text>
+</klayout-macro>

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Snap selected instances to grid</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Ctrl+Alt+A</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>instances</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_cells_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+snap_instances_to_grid
+snapper v0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+Adjust the positions of selected instances to nearest grid point.
+'''
+
+import pya
+import snapper.utils as utils
+
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+cell = lv.active_cellview().cell
+
+#grid, in dbu
+g_dbu = utils.grid()
+
+object_selection = list(lv.object_selection) #important to ensure ordering stays as expected
+object_selection = sorted(object_selection, key =lambda x: x.seq)
+
+
+lv.transaction("snap instances to grid")
+for sel_obj in object_selection:
+  if sel_obj.is_cell_inst():
+    sel_inst = sel_obj.inst()
+    trans = sel_inst.trans
+    disp = trans.disp
+      
+    #set the origin of sel_inst
+    #this is stored in sel_inst.trans.disp #translation, displacement
+    
+    disp.x = int(g_dbu*round(disp.x/g_dbu))
+    disp.y = int(g_dbu*round(disp.y/g_dbu))
+      
+    #needs to reassign each of these objects to properly update the cell
+    trans.disp = disp
+    sel_inst.trans = trans
+lv.commit()</text>
+</klayout-macro>

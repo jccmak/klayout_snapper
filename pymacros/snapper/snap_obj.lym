@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Snap object</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>;</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>obj</group-name>
+ <menu-path>snapper_menu.snap_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+snap_obj
+snapper v0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+Snaps a selected object to 1) Cursor 2) an object 3) aligned to multiple objects
+
+Align by center
+
+Assumptions
+----------
+All snapping occurs on a Manhattan basis. All edges that are snapped are vertically or horizontally aligned. Behaviour of rotated edges not guaranteed.
+
+If selected object is an instance, we assume it either has :ports: drawn at its ports, or we will assume we want to snap only to edges on the boundaries of its bounding box.
+
+Inputs
+----------
+
+Situation 1: 1 selected object
+Situation 2: 2 selected objects
+Situation 3: 3 or more selected objects.
+
+
+Behaviour
+----------
+Situation 1:
+The edge of the selected object closest to the cursor will be moved to the grid point closest to the cursor by translation (no rotation or mirroring)
+
+Situation 2:
+The first selected object is brought to the second object, to join the closest edges.
+
+Situation 3:
+The first selected object is brought to the second object, for the axis traverse to its edge, and then the same to the third selected object.
+e.g. For aligning a 90 degree bend to 2 waveguides in orthogonal directions.
+
+See also
+----------
+snap_obj
+snap_obj_align_bot_left
+snap_obj_align_top_right
+
+'''
+
+from snapper import snap
+
+snap.snap_obj(0)
+
+</text>
+</klayout-macro>

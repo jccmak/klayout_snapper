@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Enter Instance</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>PgDown</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>cells</group-name>
+ <menu-path>snapper_menu.navigation_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+enter_instance
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+
+Enters a selected instance, viewing it as a top cell
+'''
+
+import pya
+
+#Using the .lym macro properties to set up the macro
+#will trigger the following code
+
+#def enter_instance():
+lv = pya.LayoutView.current() 
+ly = pya.CellView.active().layout()
+
+
+
+#LayoutView object
+current_selection = lv.object_selection #current selected objects
+
+if current_selection:
+  cell_index = current_selection[0].cell_index()
+
+  #change view to cell based on cell_index
+  pya.CellView.active().cell = ly.cell(cell_index) #works with cell name and cell index
+  lv.zoom_fit()
+  mw.cm_max_hier() #show all hierarchy levels
+
+#a = pya.Action()
+#a.title = "Enter Instance"
+#a.shortcut = 'PgDown'
+#a.on_triggered(enter_instance)
+
+#menu = pya.Application.instance().main_window().menu()
+#menu.insert_item("snapper_menu.navigation_menu.end", "enter_instance", a)
+
+</text>
+</klayout-macro>

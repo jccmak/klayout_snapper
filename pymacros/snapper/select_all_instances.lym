@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Select instances</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Shift+A</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name/>
+ <menu-path>snapper_menu.selection_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+select_all_instances
+snapper v0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+Select all instances within current cellview currently selected in the cell hierarchy
+
+Assumptions
+----------
+Cells selected in cell hierarchy exist on the current viewed cell
+
+Inputs
+----------
+Cells selected in cell hierarchy
+
+
+Behaviour
+----------
+All instances of cells selected in cell hierarchy are added to currently selected objects
+'''
+import pya
+
+
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+cell = lv.active_cellview().cell
+
+cell_paths = lv.selected_cells_paths(lv.active_cellview().index())
+selected_cell_indices = [cp[-1] for cp in cell_paths]
+
+lv.object_selection = []
+
+for inst in cell.each_inst():
+  if inst.cell.cell_index() in selected_cell_indices:
+    sel_obj = pya.ObjectInstPath()
+    sel_obj.top = cell.cell_index()
+    ie = pya.InstElement(inst)
+    sel_obj.append_path(ie)
+    
+    lv.select_object(sel_obj)</text>
+</klayout-macro>

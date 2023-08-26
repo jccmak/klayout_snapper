@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Draw connecting polygon</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut>C</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>polygons</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_box_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+draw_connecting_poly
+snapper v 0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+
+
+Assumptions
+----------
+
+Connecting edges are on Manhattan directions.
+
+
+Inputs
+----------
+
+Selection of an object
+
+and 
+1) Cursor location
+or
+2) A second object
+
+
+Behaviour
+----------
+Draws a connecting polygon between the selection between the closest edge to 1) the current cursor location, or 2) the closest edge of a second selected object
+
+
+See also
+----------
+
+'''
+
+import pya
+import snapper.utils as utils
+import snapper.ports as ports
+
+
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+cell = lv.active_cellview().cell
+
+object_selection = list(lv.object_selection) #important to ensure ordering stays as expected
+object_selection = sorted(object_selection, key = lambda x: x.seq)
+#if not len(object_selection) == 2:
+#  pya.MessageBox.warning("Selection invalid",
+#                               "Select only two (2) objects, first the path to snap, and second the shape to snap to.", pya.MessageBox.Ok)
+ 
+
+if len(object_selection) == 1:
+  sel_obj = object_selection[0]
+
+  span = round(float(pya.Application.instance().get_config('wg-width'))/ly.dbu)#1000 #in dbu
+  copy_edge_width = bool(str(pya.Application.instance().get_config('copy-edge-width')).lower() == 'true')
+
+  edge, p_c, _layer_id = utils.closest_edge_to_cursor(sel_obj, return_full = True)
+  #pos = pya.Point(*pos)
+  print(p_c)
+  
+  #if len(sel_obj.path) &gt; 0:
+  #  p_c = pya.Point(*utils.relative_coordinates(p_c.x, p_c.y, sel_obj.path))
+    
+  
+  #print(edge, pos)
+  edge_center = edge.bbox().center()
+  edge_min = edge.bbox().p1
+  edge_max = edge.bbox().p2
+  
+  #check the orientation of edge
+  if copy_edge_width:
+    p1 = edge_min
+    if edge.dx() == 0:  #vertical edge
+      if edge_center.x &lt;= p_c.x: #cursor on the right side
+        p2 = pya.Point(p1.x + span, edge_max.y)
+    #
+      else: #cursor on the left side
+        p2 = pya.Point(p1.x - span, edge_max.y)
+      #p2 = pya.Point(pos.x, edge_max.y)
+      
+    elif edge.dy() == 0: #horizontal edge
+      if edge_center.y &lt;= p_c.y: #cursor above edge
+        p2 = pya.Point(edge_max.x, p1.y + span)  
+    
+      else: #cursor below edge
+        p2 = pya.Point(edge_max.x, p1.y - span)  
+      #p2 = pya.Point(edge_max.x, pos.y)
+        
+    else: #non-orthogonal edge
+      #create a stub at the current cursor position
+      p1 = p_c - pya.Point(span/2., span/2.)#pya.Point(pos[0] - span/2., pos[1] - span/2.)
+      p2 = p_c + pya.Point(span/2., span/2.)#pya.Point(pos[0] + span/2., pos[1] + span/2.)
+      
+  else: #create stub not copying edge width
+  
+    if edge.dx() == 0:  #vertical edge
+      p1 = pya.Point(edge_center.x, edge_center.y - span/2.)
+      if edge_center.x &lt;= p_c.x: #cursor on the right side
+        p2 = pya.Point(p1.x + span, edge_center.y + span/2.)
+    
+      else: #cursor on the left side
+        p2 = pya.Point(p1.x - span, edge_center.y + span/2.)
+      #p2 = pya.Point(pos.x, edge_center + span/2.)
+      
+    elif edge.dy() == 0: #horizontal edge
+      p1 = pya.Point(edge_center.x - span/2., edge_center.y)
+      if edge_center.y &lt;= p_c.y: #cursor above edge
+        p2 = pya.Point(edge_center.x + span/2, p1.y + span)  
+    #
+      else: #cursor below edge
+        p2 = pya.Point(edge_center.x + span/2, p1.y - span) 
+      #p2 = pya.Point(edge_center.x + span/2., pos.y) 
+        
+    else: #non-orthogonal edge
+      #create a stub at the current cursor position
+      p1 = p_c - pya.Point(span/2., span/2.)#pya.Point(pos[0] - span/2., pos[1] - span/2.)
+      p2 = p_c + pya.Point(span/2., span/2.)#pya.Point(pos[0] + span/2., pos[1] + span/2.)
+  
+  #p1 = pya.DPoint(current_pos[0] - span/2., current_pos[1] - span/2.)
+  #p2 = pya.DPoint(current_pos[0] + span/2., current_pos[1] + span/2.)
+  box = pya.Box(p1, p2)
+  
+  layer_id = lv.current_layer.current().layer_index() #try to get layer from selection
+  if not layer_id in ly.layer_indices(): #None from selection
+     layer_id = _layer_id #choose the one from the polygon selection
+  
+  #if it's still none
+  if layer_id is None:
+    #finally, create a layer
+    layer_id = ly.find_layer(pya.LayerInfo(ports.gdslayer(), 0))
+    if layer_id is None:
+      layer_id = ly.insert_layer(pya.LayerInfo(ports.gdslayer(), 0))
+    
+    
+  #layer = lv.find_layer(1,0)
+  lv.transaction("connect - stub")
+  cell.shapes(layer_id).insert(box)
+  lv.commit()
+  
+elif len(object_selection) &gt;= 2:  #if more than 2, loop connect on each of them, assuming the first one is the primary contact
+                                    
+  fix_obj = object_selection[0] 
+  move_obj_list = object_selection[1:] 
+
+  draw_flag = True
+  fixed_edges, fixed_layer_idx = utils.get_edge_list(fix_obj, return_layer = True, filter_min_length = True, filter_manhattan = True)
+  if len(fixed_edges) == 0:
+    draw_flag = False
+    exit()
+
+  for move_obj in move_obj_list:
+    move_edges, move_layer_idx = utils.get_edge_list(move_obj, return_layer = True, filter_min_length = True, filter_manhattan = True)
+    if len(move_edges) == 0:
+      draw_flag = False #do not process if no available edges
+      exit()
+
+    #determine layer to draw connecting taper on
+    if not fix_obj.is_cell_inst():
+      layer = fix_obj.shape.layer
+    else:
+      #try to see if there are any selected layers
+      selected_layers = lv.selected_layers()
+      selected_layer_indices = [li.current().layer_index() for li in selected_layers]
+      if len(selected_layer_indices)&gt;0:
+        layer = selected_layer_indices[0]
+      else:
+        layer = fixed_layer_idx[0] #select the first key in the polygon dict
+    
+    
+    #get a list of the points of the polygon of the shape  
+    #edge_center_points_fixed, fixed_edges = edge_center_points(fix_obj)
+    #edge_center_points_move, move_edges = edge_center_points(move_obj)
+
+
+
+
+    if draw_flag:
+      #find closest point: compute all distance pairs and find the minimum
+      idx_fixed, idx_move, min_dist, min_dist_trans = utils.closest_edges(fixed_edges, move_edges, filter_parallel=True, method = 'center')
+
+      fixed_edge = fixed_edges[idx_fixed]
+      move_edge = move_edges[idx_move]
+
+      #based on these edges, draw the polygon
+      points = [fixed_edge.p1, fixed_edge.p2, move_edge.p1, move_edge.p2]
+      #layer = fix_obj.shape.layer
+      poly = pya.Polygon()
+      poly.assign_hull(points)
+
+      #check if poly == bounding box. if so, make it a box
+      if poly.is_box():
+        poly = poly.bbox()
+
+      lv.transaction("connect - taper")
+       #we are interested in a convex shape
+      cell.shapes(layer).insert(poly)
+      lv.commit()
+</text>
+</klayout-macro>

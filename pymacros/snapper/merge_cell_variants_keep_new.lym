@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Merge base cell with $ variant, keeping $ variant</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Alt+Shift+R</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>instances</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_cells_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+merge_cell_variants_keep_new
+snapper v 0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+Assumptions
+----------
+In the cell hierarchy, base cell exists
+
+e.g. 
+Both CELL$1 and CELL are in the layout. CELL$1 is selected in the Cells hierarchy viewer.
+
+
+Inputs
+----------
+Selection (multiple) of cell variants (cells with $ in the name) in cell hierarchy viewer
+
+Behaviour
+----------
+
+Merge a selected cell variant ($) with the base variant, keeping the variant, replacing all instances in the layout
+
+
+If no $ in the cell name, do nothing.
+If no base variant of the cell name exists, do nothing.
+
+If base variant of the cell exists, replace this current cell and all instances with the base variant.
+
+
+See also
+----------
+
+merge_cell_variants_keep_old
+remove_$
+
+'''
+
+import pya
+
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+cell_active = lv.active_cellview().cell #currently active cell
+
+#get the all selected cells
+cell_paths = lv.selected_cells_paths(lv.active_cellview().index())
+
+#cell indices of all the selected cells
+selected_cell_indices = [cp[-1] for cp in cell_paths]
+
+for selected_cell_index in selected_cell_indices:
+
+  #get all instances of the selected cell
+  selected_cell = ly.cell(selected_cell_index)
+  selected_cell_name = selected_cell.name
+  
+  if "$" in selected_cell_name:
+    base_cell_name = selected_cell_name[:selected_cell_name.find("$")]
+    
+    #check if a cell with base_cell_name exists
+    if ly.has_cell(base_cell_name): #perform replace operation only if base cell exists, to avoid erronous deletion
+
+################
+# TRANSACTION
+################
+
+      lv.transaction("merge cell variants - keep new")
+
+      base_cell = ly.cell(base_cell_name)
+  
+    
+      for parent_cell_idx in base_cell.each_parent_cell():
+        #Replace each base cell with the variant
+        
+        parent_cell = ly.cell(parent_cell_idx)
+        for inst in parent_cell.each_inst():
+          if inst.cell.cell_index() == base_cell.cell_index(): #find the instance within the parent cell of the selected cell
+            inst.cell = selected_cell
+      
+      
+      assert(base_cell.parent_cells() == 0) #check there are no remaining parent cells; it's a top level now
+      
+      #switch cellview to selected cell
+      lv.active_cellview().cell_index = selected_cell.cell_index()
+      
+      #prune the replaced cell
+      base_cell.delete()
+      
+      assert(lv.active_cellview().is_valid()) #make sure we end on an active cellview
+      
+      #rename the variant cell to the base cell
+      selected_cell.name = base_cell_name
+      lv.commit()</text>
+</klayout-macro>

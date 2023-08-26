@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Add individual bounding box to shapes</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>-</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>box</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_box_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+add_bounding_box
+snapper v 0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+Cover a selection of objects each individually with a bounding box of the selected layers
+
+Assumptions
+----------
+
+Inputs
+----------
+
+Selected objects
+
+
+Behaviour
+----------
+Cover the selection of objects each individually with a covering bounding box of the selected layers
+
+
+See also
+----------
+add_bounding_box
+add_bounding_boxes
+
+'''
+
+## TO BE REWRITTEN USING pya.Region
+
+import pya
+
+
+
+lv = pya.Application.instance().main_window().current_view()
+ly = pya.CellView.active().layout()
+mw = pya.Application.instance().main_window()
+
+selected_layers = [it.current().layer_index() for it in lv.selected_layers()] #_layer.current().layer_index()
+
+for selected_object in lv.object_selection:
+
+  #for objects selected from the top cell
+  box = selected_object.shape.bbox()
+  cell = selected_object.shape.cell
+  
+#################
+# Transaction
+#################
+ 
+  lv.transaction("selection bounding boxes")  
+    
+  if selected_layers:
+    for layer in selected_layers:
+      cell.shapes(layer).insert(box)
+  else:
+    layer = selected_object.shape.layer
+    cell.shapes(layer).insert(box)
+  lv.commit()</text>
+</klayout-macro>

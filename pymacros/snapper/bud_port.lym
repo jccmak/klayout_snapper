@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Bud port</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Tab</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>instance</group-name>
+ <menu-path>snapper_menu.editing_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+bud_port
+snapper v 0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+
+
+Assumptions
+----------
+
+Inputs
+----------
+1) Selected object
+
+2) Cursor location
+
+
+Behaviour
+----------
+Create a port, on the port gdslayer, on a previously unoccupied datatype on that cell
+at the edge closest to the current cursor position
+'''
+
+import pya
+import snapper.ports as ports
+import snapper.utils as utils
+
+
+# Enter your Python code here
+
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+top_cell = lv.active_cellview().cell
+
+span = round(float(pya.Application.instance().get_config('wg-width'))/ly.dbu)#1000 #in dbu
+copy_edge_width = bool(str(pya.Application.instance().get_config('copy-edge-width')).lower() == 'true')
+port_layer = round(float(pya.Application.instance().get_config('port-layer')))
+
+object_selection = list(lv.object_selection) #important to ensure ordering stays as expected
+object_selection = sorted(object_selection, key = lambda x: x.seq)
+
+#set port layer
+#find port layer, and add if not found
+#layer_id = ly.find_layer(port_layer, 0)
+#if layer_id is None:
+#  layer_id = ly.layer(port_layer,0)
+#  lv.add_missing_layers()
+  
+  
+layer_id, datatype = ports.next_available_port()
+  
+  
+if len(object_selection):
+  sel_obj = object_selection[0]
+  
+  edge, p_c, _layer_idx = utils.closest_edge_to_cursor(sel_obj, return_full = True)
+
+  edge_center = edge.bbox().center()
+  edge_min = edge.bbox().p1
+  edge_max = edge.bbox().p2
+  
+  #check the orientation of edge
+  
+  
+  #check orientation of cursor with respect to edge by taking cross product
+  p1 = edge_min
+  p2 = edge_max
+    
+  v1 = p2 - p1
+  v2 = p_c - p1
+    
+  orientation = v2.vprod_sign(v1)
+  if copy_edge_width:
+    span = v1.length()
+    
+  normal_x = -v1.y/v1.length()
+  normal_y = v1.x/v1.length()
+    
+
+  p3_x = edge_center.x + orientation*normal_x*span
+  p3_y = edge_center.y + orientation*normal_y*span
+  p3 = pya.Point(p3_x, p3_y)
+  box = pya.Polygon([p1, p2, p3])
+  
+  
+  if layer_id is None: #None from selection
+    layer_id = lv.current_layer.current().layer_index() 
+    
+  #layer = lv.find_layer(1,0)
+  top_cell.shapes(layer_id).insert(box)
+  
+else: #create port at cursor
+    #pya.MessageBox.warning("No selected shape",
+    #                          "Select shape to append stub", pya.MessageBox.Ok)  \
+  p_c = utils.cursor_position(in_dbu=True, relative=True, on_grid=True)
+
+  p1 = pya.Point(p_c.x - span/2., p_c.y)
+  p2 = pya.Point(p_c.x + span/2., p_c.y )
+  p3 = pya.Point(p_c.x, p_c.y + span)
+  poly = pya.Polygon([p1, p2, p3])
+  
+  _layer_id = ly.find_layer(lv.current_layer.current().source_layer, lv.current_layer.current().source_datatype)
+  if layer_id is None:
+    layer_id = ly.insert_layer(pya.LayerInfo(lv.current_layer.current().source_layer, lv.current_layer.current().source_datatype))
+    #create the layer
+    lv.add_missing_layers()
+
+  top_cell.shapes(layer_id).insert(poly)   </text>
+</klayout-macro>

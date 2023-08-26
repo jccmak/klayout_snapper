@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Snap path bottom/left</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Ctrl+:</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>path</group-name>
+ <menu-path>snapper_menu.snap_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+snap_path
+snapper v0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+Snaps a selected path/PCell with path guiding shape/guiding shape path of a PCell 
+to 1) cursor a) at the end of the path, b) along the path 2) the end of the path to the [alignment] of an edge of a subsequently selected object(s)
+
+[alignment] bottom/left
+For simplicity, we refer to any path/PCell with path guiding shape/guiding shape path of a PCell generally as path
+
+Assumptions
+----------
+All snapping occurs on a Manhattan basis. All edges that are snapped are vertically or horizontally aligned. Behaviour of rotated edges not guaranteed.
+
+If selected object is an instance, we assume it either has :ports: drawn at its ports, or we will assume we want to snap only to edges on the boundaries of its bounding box.
+
+Inputs
+----------
+
+Situation 1: 1 selected object (the path)
+  a) Cursor close to the ends
+  b) Cursor close to a segment along the path
+Situation 2: 2 selected or more selected objects
+
+
+
+Behaviour
+----------
+Situation 1:
+a) The end of the path is extended/contracted such that the end of the path ends on the grid point closest to the cursor. Angles of the previous line segments are preserved in the translation of the end point.
+b) The line segment of the path closest to the cursor is adjusted such that the segment now overlaps the grid point closest to the cursor. Angles of surrounding line segments are preserved.
+
+Situation 2:
+The selected path (first selection) has its end points translated to meet the edges of the subsequent selections.
+
+See also
+----------
+snap_path
+snap_path_align_bot_left
+snap_path_align_top_right
+
+'''
+
+import pya
+from snapper import snap
+
+snap.snap_path(-1)</text>
+</klayout-macro>

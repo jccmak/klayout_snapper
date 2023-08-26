@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Duplicate (no zoom)</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Ctrl+B</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name/>
+ <menu-path>snapper_menu.editing_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+duplicate_nozoom
+snapper v 0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+
+Duplicate selected objects without adjusting zoom (quality of life)
+
+Assumptions
+----------
+
+Inputs
+----------
+Selection (multiple) of shapes or instances
+
+Behaviour
+----------
+Duplicates the selection without adjusting zoom,
+in contrast to built-in duplicate function.
+
+
+'''
+
+import pya
+
+
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+cell = lv.active_cellview().cell
+
+object_selection = lv.object_selection
+new_selection = []
+
+################
+# TRANSACTION
+################
+
+lv.transaction("duplicate (no zoom)")
+
+for sel in object_selection:
+  if not sel.is_cell_inst(): #it's a shape
+    shape = sel.shape.dup()
+    shape = cell.shapes(shape.layer).insert(shape)
+    
+    new_sel = pya.ObjectInstPath()
+    new_sel.shape = shape
+    new_sel.layer = shape.layer
+    new_sel.top = shape.cell.cell_index() 
+    new_selection.append(new_sel)
+  elif sel.is_cell_inst():
+    inst = sel.inst().dup()
+    
+    inst = cell.insert(inst)
+    #select the new instance
+    new_sel = pya.ObjectInstPath()
+    new_sel.top = cell.cell_index()
+    ie = pya.InstElement(inst)
+    new_sel.append_path(ie)
+    new_selection.append(new_sel)
+
+lv.object_selection = new_selection
+
+lv.commit()</text>
+</klayout-macro>

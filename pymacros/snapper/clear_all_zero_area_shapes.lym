@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Clear all zero area polygons</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut/>
+ <show-in-menu>true</show-in-menu>
+ <group-name/>
+ <menu-path>snapper_menu.debug_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''clear_all_zero_area_shapes
+ snapper v0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+Clears all shapes (excluding Text) having zero area.
+
+ '''
+import pya
+
+#
+
+#look through all the cells
+lv = pya.Application.instance().main_window().current_view()
+ly = pya.CellView.active().layout()
+mw = pya.Application.instance().main_window()
+cell = pya.CellView.active().cell
+
+count = 0
+#loop through shapes in each of the cells, going layer by layer
+for cell in ly.each_cell():
+  for i in ly.layer_indexes():
+    for shape in cell.each_shape(i):
+      if shape.area()&lt;=0 and not shape.is_text():
+        shape.delete()
+        count = count + 1
+        
+
+empty_cells = [cell for cell in ly.each_cell() if cell.is_empty()]
+for cell in empty_cells:
+  cell.prune_cell()
+
+pya.MessageBox.info("Empty shapes cleared",
+                                 "Empty shapes: %d"%count, pya.MessageBox.Ok)
+#doing it this way stops the loop midway, exit is probably called inside somewhere
+#for cell in ly.each_cell():
+#  if cell.is_empty():
+#    cell.prune_cell()</text>
+</klayout-macro>

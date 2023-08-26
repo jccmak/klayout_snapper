@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>No grid</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Alt+0</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>grid</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_grid_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+grid_edit_none
+
+Keyboard shortcut to set editing Object Editor Options &gt; Basic Editing &gt; Snapping &gt; Grid to
+
+No grid
+
+Assumptions
+----------
+
+Inputs
+----------
+
+
+Behaviour
+----------
+Keyboard shortcut to set editing Object Editor Options &gt; Basic Editing &gt; Snapping &gt; Grid to
+
+No grid
+'''
+
+import pya
+
+pya.Application.instance().set_config('edit-grid', 'none')
+</text>
+</klayout-macro>

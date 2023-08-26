@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Select containing instance</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Shift+End</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name/>
+ <menu-path>snapper_menu.selection_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+select_containing_instance
+snapper v0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+Changes the selection to the instance containing the currently selected object, if exists
+
+'''
+
+
+import pya
+
+#ascend the instance level of the current selection
+lv = pya.Application.instance().main_window().current_view()
+ly = pya.CellView.active().layout()
+mw = pya.Application.instance().main_window()
+cell = pya.CellView.active().cell
+
+selected_object = lv.object_selection[0]
+#if it's a shape, make the current selection the path
+if not selected_object.is_cell_inst():
+  path = selected_object.path
+  #print(path)
+  if path:
+
+    sel_obj = pya.ObjectInstPath()
+    sel_obj.top = pya.CellView.active().cell_index #cell.cell_index()
+    sel_obj.path = path
+    sel_obj.cv_index = pya.CellView.active().index()
+    
+    lv.object_selection = [ sel_obj ]
+else: #an instance is selected
+  path = selected_object.path #get the path
+  if len(path)&gt;1: #if it's at least one instance deep, ascend the selection
+    sel_obj = pya.ObjectInstPath()
+    sel_obj.top = pya.CellView.active().cell_index #cell.cell_index()
+    sel_obj.path = path[:-1]
+    sel_obj.cv_index = pya.CellView.active().index()
+      
+    lv.object_selection = [ sel_obj ]
+  else: #otherwise deselect
+    lv.object_selection  = []
+  </text>
+</klayout-macro>

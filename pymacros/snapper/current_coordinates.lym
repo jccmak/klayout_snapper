@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Current coordinates</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut>`</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>coordinates</group-name>
+ <menu-path>snapper_menu.navigation_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+current_coordinates
+snapper v 0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+
+Display coordinates in copyable string form in a dialog box
+
+Assumptions
+----------
+
+Inputs
+----------
+User moves cursor to desired location
+
+
+Behaviour
+----------
+Displays dialog box with coordinates consistent with coordinates displayed on the bottom right of window.
+'''
+
+import pya
+import snapper.utils as utils
+
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+cell = lv.active_cellview().cell
+
+#current_box = lv.box()
+#c = current_box.center()
+p_c = utils.cursor_position()
+
+instance = pya.Application.instance()
+decimals = int(instance.get_config('curr-coords-decimals'))
+
+c_str = ("%0."+str(decimals)+"f, %0."+str(decimals)+"f")%(p_c.x, p_c.y)#(c.x, c.y)
+
+#unfortunately clipboard doesn't work...
+#cb = pya.QClipboard()
+#cb.clear()
+#c_q_str = pya.QString()
+#cb.setText(c_str, 1)
+
+dialog = pya.QDialog_Native()
+dialog.setWindowTitle("Coordinates")
+layout = pya.QHBoxLayout(dialog)
+
+lineedit = pya.QLineEdit(dialog)
+lineedit.text = c_str
+lineedit.selectAll()
+layout.addWidget(lineedit)
+
+dialog.setLayout(layout)
+pya.QApplication.processEvents()
+dialog.show()</text>
+</klayout-macro>

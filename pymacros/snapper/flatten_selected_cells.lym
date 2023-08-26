@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Flatten all instances of selected cells</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Ctrl+Shift+G</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>instances</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_cells_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+flatten_selected_cells
+snapper v0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+
+Flatten all instances of cells selected in the Cells hiearchy
+'''
+
+import pya
+
+
+#Select the cell from Cells hiearchy, go into all its parent cells, select the instance, and flatten it. Afterwards, prune the cell itself.
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+cell_active = lv.active_cellview().cell #currently active cell
+
+#get the all selected cells
+cell_paths = lv.selected_cells_paths(lv.active_cellview().index())
+
+#cell indices of all the selected cells
+selected_cell_indices = [cp[-1] for cp in cell_paths]
+
+#################
+# Transaction
+#################
+lv.transaction("flatten selected cells")
+
+for selected_cell_index in selected_cell_indices:
+
+  #get all instances of the selected cell
+  selected_cell = ly.cell(selected_cell_index)
+  
+  for parent_cell_idx in selected_cell.each_parent_cell():
+    #print(parent_cell_idx)
+    
+    parent_cell = ly.cell(parent_cell_idx)
+    for inst in parent_cell.each_inst():
+      if inst.cell.cell_index() == selected_cell_index: #find the instance within the parent cell of the selected cell
+        inst.flatten()
+  
+  
+  assert(selected_cell.parent_cells() == 0) #check there are no remaining parent cells; it's a top level now
+  
+  #prune this cell
+  selected_cell.delete()
+lv.commit()</text>
+</klayout-macro>

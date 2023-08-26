@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Add angle to path</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Alt+J</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>routing</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_routing_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+add_angle_to_path
+snapper v 0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+
+Turns the closest corner on a selected path to a 45 degree bend
+
+Assumptions
+----------
+
+Inputs
+----------
+
+Selected path/guiding shape of a PCell
+
+
+Behaviour
+----------
+Turns the closest corner on a selected path to a 45 degree bend
+
+See also
+----------
+
+'''
+
+import pya
+import snapper.utils as utils
+import snapper.pcell as pcell
+
+#current workspace
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+cell = lv.active_cellview().cell
+
+#grid, in dbu
+g_dbu = utils.grid()
+
+#bend radius
+r_dbu = int(round(float(pya.Application.instance().get_config('bend-radius'))/ly.dbu))
+
+object_selection = list(lv.object_selection) #important to ensure ordering stays as expected, or else may behave like a set?
+object_selection = sorted(object_selection, key = lambda x: x.seq)
+
+if len(object_selection):
+  sel_obj = object_selection[0]
+
+  #if is a path
+  if not sel_obj.is_cell_inst() and sel_obj.shape.is_path():
+  
+    #cursor position
+    p_c = utils.cursor_position(in_dbu=True, relative=True, on_grid=True)  #x_c, y_c are used afterwards separately
+    #x_c, y_c  = p_c.x, p_c.y
+
+    # if shape is within any instance, use the coordinates of the same level as the path
+    # This automatically accounts for guiding shapes
+    if len(sel_obj.path) &gt; 0:
+      p_c = utils.relative_coordinates_point(p_c, sel_obj.path)
+
+
+    #get the path object of the current shape. This is by value
+    path = sel_obj.shape.path 
+        
+    path_points = list(path.each_point())
+    path_pairs = list(zip(path_points[:-1], path_points[1:]))
+    
+    idx_min = None
+    dist_min = None
+    point_min = None
+    
+    dir_prev_min = None
+    dir_next_min = None
+    t_min = None
+    
+    for ii in range(1, len(path_points)-1):
+      #is this vertex an orthogonal angle?
+      p_prev = path_points[ii-1]
+      p_cur = path_points[ii]
+      p_next = path_points[ii+1]
+      
+      dist_c = (p_c - p_cur).length()
+      is_orth = ((p_cur - p_prev).sprod((p_next - p_cur)) == 0)
+      
+      if is_orth:
+        if dist_min is None or dist_c &lt; dist_min:
+          dist_min = dist_c
+          idx_min = ii
+          point_min = p_cur
+          dir_prev_min = p_cur - p_prev
+          dir_next_min = p_next - p_cur
+
+    
+    #adjust the point by g_dbu
+    if not dir_prev_min is None and not dir_next_min is None: #does nothing if no more points to adjust
+      dir_prev_min = dir_prev_min/dir_prev_min.length()
+      dir_next_min = dir_next_min/dir_next_min.length()
+      
+      point1 = point_min - g_dbu*dir_prev_min
+      point2 = point_min + g_dbu*dir_next_min
+      
+      del path_points[idx_min]
+      path_points.insert(idx_min, point2)
+      path_points.insert(idx_min, point1)
+
+#################
+# Transaction
+#################
+ 
+      lv.transaction("add angle")
+      sel_obj.shape.path = pya.Path(path_points, path.width)
+      cell.refresh()
+      pcell.refresh_pcell_path(sel_obj)
+      lv.commit()
+</text>
+</klayout-macro>

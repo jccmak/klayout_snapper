@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Revert PCell to path</description>
+ <version>v2</version>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut>Shift+W</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>routing</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_routing_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+revert_to_path
+snapper v 0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+Inputs
+----------
+1) Selection of a path. Path is manhattan.
+
+OR
+
+2) Selection of a PCell with a path guiding shape
+
+
+
+Behaviour
+----------
+1) 
+If selection is a path with routing, clears the routing on the selected path.
+
+2)
+Reverts various PCells with path guiding shape back to Path.
+
+'''
+
+import pya
+from snapper.pcell import roundpath2path
+
+
+    
+
+def clearancepath2path(sel_obj, verbose = False):
+
+  lv = pya.Application.instance().main_window().current_view()
+  ly = lv.active_cellview().layout()
+  cell = lv.active_cellview().cell
+  
+  #get the selected path
+#  object_selection = lv.object_selection
+#  if len(object_selection)&lt;1:
+#    pya.MessageBox.warning("No selection",
+#                                 "Select a path to convert into a round-path", pya.MessageBox.Ok)
+  
+  #series of checks ensuring we are selecting an instance of a round path
+  #sel_obj = object_selection[0]
+  if not sel_obj.is_cell_inst() and verbose:
+    pya.MessageBox.warning("Not Round-Path",
+                                 "Select a round path instance to convert into a path. Hint: Instance frame should be highlighted.", pya.MessageBox.Ok)
+    return None, None                         
+  inst = sel_obj.inst()
+  if not inst.is_pcell() and verbose:
+    pya.MessageBox.warning("Not {ath PCell",
+                                 "Select a round path instant to convert into a path. Hint: Instance frame should be highlighted.", pya.MessageBox.Ok)                               
+    return None, None                               
+  
+  
+  '''
+  pcell_decl = inst.pcell_declaration()
+  if (not pcell_decl.name() == "ClearancePath" not pcell_decl.name() == "ROUND_PATH") and verbose:
+    pya.MessageBox.warning("Not PCell",
+                                 "Select a round path instant to convert into a path. Hint: Instance frame should be highlighted.", pya.MessageBox.Ok)                               
+    return None, None
+  
+  '''
+                                 
+  #for p in inst.pcell_parameters_by_name():
+  #  print(p)
+  if sel_obj.inst().pcell_declaration().name() == "ROUND_PATH":
+    layer_info = inst.pcell_parameter("layer")
+    path = inst.pcell_parameter("path")
+    layer_idx = ly.find_layer(layer_info)
+  elif sel_obj.inst().pcell_declaration().name() == "ClearancePath":
+    layer_info = inst.pcell_parameter("l")
+    path = inst.pcell_parameter("s")
+    layer_idx = ly.find_layer(layer_info)
+  elif sel_obj.inst().pcell_declaration().name() == "ArrayPath":
+    layer_info = inst.pcell_parameter("l")
+    path = inst.pcell_parameter("s")
+    layer_idx = ly.find_layer(layer_info)
+      
+  #PCell uses DPoints, but the actual units are Points (very confusing)
+  path_points = [pya.DPoint(pp.x, pp.y) for pp in path.each_point()]
+  new_path = pya.DPath()
+  new_path.points = path_points
+  new_path.width = path.width
+  shape = cell.shapes(layer_idx).insert(new_path)
+  trans = sel_obj.inst().dcplx_trans
+  shape.transform(trans)
+  #select shape
+  
+  del_cell_index = sel_obj.inst().cell.cell_index()
+#  ly.cell(cell_index).delete() #can't delete here, or else we get reference errors
+  #sel_obj.inst().delete()
+  
+  sel_obj = pya.ObjectInstPath()
+  sel_obj.shape = shape
+  sel_obj.layer = shape.layer
+  sel_obj.top = shape.cell.cell_index() 
+  
+  #lv.select_object(sel_obj)
+  return sel_obj, del_cell_index
+
+
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+top_cell = lv.active_cellview().cell
+
+###### Load parameters for routing removal
+bend_cell_name = pya.Application.instance().get_config('bend-cell')
+
+layer_str = pya.Application.instance().get_config('wg-layer')
+gdslayer, datatype = layer_str.split('/')
+gdslayer = int(gdslayer)
+datatype = int(datatype)
+layer_idx = ly.find_layer(gdslayer, datatype)
+
+
+width_str = pya.Application.instance().get_config('wg-width')
+width = 0
+try:
+  width = float(width_str)
+except:
+  pass
+
+
+
+
+#########
+
+#get the selected path
+object_selection = lv.object_selection
+new_selection = []
+del_cell_indices = []
+
+
+
+lv.transaction("revert")
+
+#https://www.klayout.de/forum/discussion/932/internal-error-mp-v-is-used-m-n-was-not-true
+#Need to debug this annoyance
+for sel_obj in object_selection:
+  if sel_obj.is_cell_inst() and sel_obj.inst().is_pcell():
+    
+    new_sel_obj, del_cell_index = clearancepath2path(sel_obj, verbose = False)
+    if not new_sel_obj is None:
+      new_selection.append(new_sel_obj)
+      del_cell_indices.append(del_cell_index)
+      
+  elif not sel_obj.is_cell_inst() and sel_obj.shape.is_path():
+  
+      ####
+    #Get and analyze bend cell
+    
+    bend_cell_index = None
+    for cc in ly.each_cell():
+      if cc.name == bend_cell_name:
+        bend_cell_index = ly.cell_by_name(cc.name)
+        
+    assert(not bend_cell_index is None)
+    bend_cell = ly.cell(bend_cell_index)
+
+
+    cell_sel = ly.cell(sel_obj.cell_index())
+    shapes_sel = cell_sel.shapes(layer_idx)
+    
+    sel_path = sel_obj.shape.path
+    
+    #remove any shape interacting with the path
+    reg_path = pya.Region(sel_path)
+    for ss in shapes_sel.each_overlapping(sel_path.bbox()): #restrict search to within the path, for efficiency
+      if not ss == sel_obj.shape:
+        reg_interacting = pya.Region(ss.polygon).interacting(reg_path)
+        if reg_interacting.count():
+          shapes_sel.erase(ss)
+
+    #remove any instance of the bend cell interacting with the path
+    for inst in cell_sel.each_overlapping_inst(sel_path.bbox()):
+      if inst.cell_index == bend_cell_index:
+        reg_inst = pya.Region(inst.cell.begin_shapes_rec(layer_idx), inst.trans)#inst.bbox())
+        reg_interacting_inst = reg_inst.interacting(reg_path) 
+        if reg_interacting_inst.count():
+          cell_sel.erase(inst)
+    new_selection.append(sel_obj)
+    
+    
+
+lv.object_selection = new_selection
+for cell_index in del_cell_indices:
+  ly.cell(cell_index).delete()
+  
+lv.commit()</text>
+</klayout-macro>

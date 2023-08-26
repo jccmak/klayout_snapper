@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Bud path bend</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Alt+K</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>routing</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_routing_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+bud_path_bend
+snapper v 0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+
+
+Assumptions
+----------
+
+Inputs
+----------
+1) Selected path (Path/Path guiding shape)
+
+2)
+  Cursor location
+
+
+Behaviour
+----------
+Append a 90 degree bend at the end of the path closest to the cursor. The side length of the bend is set according to the config parameter 'bend-radius' 
+
+'''
+
+
+import pya
+import snapper.utils as utils
+import snapper.pcell as pcell
+from snapper.utils import sgn
+
+#current workspace
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+cell = lv.active_cellview().cell
+
+#grid, in dbu
+#g_dbu = int(round(float(pya.Application.instance().get_config('edit-grid'))/ly.dbu))
+g_dbu = utils.grid()
+
+#bend radius
+r_dbu = int(round(float(pya.Application.instance().get_config('bend-radius'))/ly.dbu))
+
+
+
+
+    
+object_selection = list(lv.object_selection) #important to ensure ordering stays as expected, or else may behave like a set?
+object_selection = sorted(object_selection, key = lambda x: x.seq)
+
+if len(object_selection):
+  sel_obj = object_selection[0]
+
+  #if is a path
+  if not sel_obj.is_cell_inst() and sel_obj.shape.is_path() and sel_obj.shape.is_valid():
+
+    #cursor position
+    p_c = utils.cursor_position(in_dbu=True, relative=True, on_grid=True)  #x_c, y_c are used afterwards separately
+    x_c, y_c = p_c.x, p_c.y
+
+    # if shape is within any instance, use the coordinates of the same level as the path
+    # This automatically accounts for guiding shapes
+    if len(sel_obj.path) &gt; 0:
+      p_c = utils.relative_coordinates_point(p_c, sel_obj.path)
+      x_c, y_c = p_c.x, p_c.y
+        
+    #get the path object of the current shape. This is by value
+    path = sel_obj.shape.path 
+    
+    #points of the current path
+    points = [pp for pp in path.each_point()]
+    
+    #points x and y are in dbu
+    #check whether cursor is close to front or back
+    x_f, y_f = points[0].x, points[0].y
+    x_b, y_b = points[-1].x, points[-1].y
+    
+    dist_f = (x_c - x_f)**2 + (y_c - y_f)**2
+    dist_b = (x_c - x_b)**2 + (y_c - y_b)**2
+    
+    #Check whether we are at the front or back
+    #Get the insertion location, direction, orthogonal direction, 
+    #and current tip
+    if dist_f&lt;=dist_b:
+      
+      #at front
+      idx_insert = 0
+      idx_remove = 0
+      
+      x_prev, y_prev = points[1].x, points[1].y
+      x_tip, y_tip = x_f, y_f
+
+    else:
+    
+      #at back
+      idx_insert = len(points)+1
+      idx_remove = len(points)-1
+      x_prev, y_prev = points[-2].x, points[-2].y
+      x_tip, y_tip = x_b, y_b
+  
+    
+    #direction of the cursor
+    d_x_c = x_c - x_tip
+    d_y_c = y_c - y_tip
+    
+    #direction along the tip
+    d_x = x_tip - x_prev
+    d_y = y_tip - y_prev
+    
+    d_x_1, d_y_1 = sgn(d_x), sgn(d_y)
+    d_x_c_s, d_y_c_s = sgn(d_x_c), sgn(d_y_c)
+    
+    #compute the direction of the second insertion point
+    d_y_2 = abs(d_x_1)*d_y_c_s
+    d_x_2 = abs(d_y_1)*d_x_c_s  
+  
+    #sanity check: abs(d_x_norm) + abs(d_y_norm) == 1 #path is orthogonal, we have a unique direction
+    #abs(d_x_2) + abs(d_y_2) == 1 #is orthogonal 
+    check1 = (abs(d_x_1) + abs(d_y_1) == 1)
+    check2 = (abs(d_x_2) + abs(d_y_2) == 1)
+      
+  
+    if check1 and check2:
+
+      p1 = pya.Point(x_tip + d_x_1*r_dbu, y_tip + d_y_1*r_dbu)
+      p2 = p1 + pya.Vector(r_dbu*d_x_2, r_dbu*d_y_2)
+      
+      del points[idx_remove]
+
+          
+      points.insert(idx_insert, p1)
+      points.insert(idx_insert, p2)
+      
+      path.points = points
+      
+#########
+# Transaction
+#########      
+
+      lv.transaction("bud path - bend")
+      sel_obj.shape.path = path
+      cell.refresh()
+      pcell.refresh_pcell_path(sel_obj)
+      lv.commit()
+
+</text>
+</klayout-macro>

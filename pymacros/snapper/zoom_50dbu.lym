@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Zoom Level (50 dbu)</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Ctrl+0</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>zoom</group-name>
+ <menu-path>snapper_menu.navigation_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+zoom_50dbu
+
+Zooms current cellview to 50 dbu span box
+
+'''
+import pya
+from snapper.utils import zoom_cursor as zoom
+# Enter your Python code here ..
+
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+
+zoom(50.*ly.dbu/2.)
+
+</text>
+</klayout-macro>

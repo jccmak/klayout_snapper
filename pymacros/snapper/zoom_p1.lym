@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Zoom Level (0.1 um)</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>Ctrl+3</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>zoom</group-name>
+ <menu-path>snapper_menu.navigation_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+zoom_p1
+
+Zooms current cellview to 0.1 um span box
+
+'''
+
+import pya
+from snapper.utils import zoom_cursor as zoom
+
+
+zoom(0.1/2.) #currently zooms at center point of the view, better method is to zoom at cursor location
+
+</text>
+</klayout-macro>

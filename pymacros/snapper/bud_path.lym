@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Bud path</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>K</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>routing</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_routing_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+bud_path
+snapper v 0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+
+
+Assumptions
+----------
+
+Inputs
+----------
+1)
+  a) Selected non-path object (including PCells)
+  b) Selected path (Path/Path guiding shape)
+
+2)
+  Cursor location
+
+
+Behaviour
+----------
+1a)
+Create a new path centered at an edge closest to the current cursor position
+
+
+1b)
+Extend the end of the path towards the current cursor position, along diagonal/manhattan directions
+
+
+'''
+
+
+import pya
+
+#from sys import exit
+import math
+import snapper.utils as utils
+import snapper.pcell as pcell
+
+
+#current workspace
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+cell = lv.active_cellview().cell
+
+object_selection = list(lv.object_selection) #important to ensure ordering stays as expected, or else may behave like a set?
+object_selection = sorted(object_selection, key = lambda x: x.seq)
+
+
+if len(object_selection):
+  sel_obj = object_selection[0]
+  
+  
+  
+  #if not sel_obj.shape.is_valid():
+  #  exit() #do nothing if the object is invalid
+
+  #if is a path
+  if not sel_obj.is_cell_inst() and sel_obj.shape.is_path() and sel_obj.shape.is_valid():
+  
+    #cursor position
+    p_c = utils.cursor_position(in_dbu=True, relative=True, on_grid=True)  #x_c, y_c are used afterwards separately
+    x_c, y_c = p_c.x, p_c.y
+
+    # if shape is within any instance, use the coordinates of the same level as the path
+    # This automatically accounts for guiding shapes
+    if len(sel_obj.path) &gt; 0:
+      p_c = utils.relative_coordinates_point(p_c, sel_obj.path)
+      x_c, y_c = p_c.x, p_c.y
+
+    #get the path object of the current shape. This is by value
+    path = sel_obj.shape.path 
+    
+    #points of the current path
+    points = [pp for pp in path.each_point()]
+    
+    #points x and y are in dbu
+    #check whether cursor is close to front or back
+    x_f, y_f = points[0].x, points[0].y
+    x_b, y_b = points[-1].x, points[-1].y
+    
+    dist_f = (x_c - x_f)**2 + (y_c - y_f)**2
+    dist_b = (x_c - x_b)**2 + (y_c - y_b)**2
+    
+    #Check whether we are at the front or back
+    #Get the insertion location, direction, orthogonal direction, 
+    #and current tip
+    if dist_f&lt;=dist_b:
+      
+      #at front
+      idx_insert = 0
+      idx_remove = 0
+      
+      x_prev, y_prev = points[1].x, points[1].y
+      x_tip, y_tip = x_f, y_f
+  
+      
+    else:
+    
+      #at back
+      idx_insert = len(points)
+      idx_remove = len(points)-1
+      x_prev, y_prev = points[-2].x, points[-2].y
+      x_tip, y_tip = x_b, y_b
+  
+    
+    d_x_c = x_c - x_tip
+    d_y_c = y_c - y_tip
+    
+    d_x = x_tip - x_prev
+    d_y = y_tip - y_prev
+  
+    #angle calculation
+    
+    ang_c = math.atan2(d_y_c, d_x_c)
+    pi_4 = math.pi/4.
+    ang_round_norm = round(ang_c/pi_4)
+    ang = pi_4*ang_round_norm
+    
+    d_x_c_s = int(round(10*math.cos(ang)))
+    d_y_c_s = int(round(10*math.sin(ang)))
+    
+    is_parallel = (abs(d_x*d_y_c_s - d_y*d_x_c_s)&lt;=10) #Use 10 as threshold in case of small errors for non-manhattan angles
+    
+    #calculate a distance to snap, based on closest point to cursor along selected direction
+    p_tip = pya.Point(x_tip, y_tip)
+    dir_tip = pya.Vector(int(round(100*math.cos(ang))), int(round(100*math.sin(ang))))
+    point_insert = utils.project_point(p_tip, p_tip + dir_tip, p_c)
+    
+    if is_parallel: #if the new point is parallel to the previous path, just modify the end
+      points[idx_remove] = point_insert
+    else: #else, insert the point as new directions
+      points.insert(idx_insert, point_insert)
+    path.points = points #modify the path, and adjust the path in the current shape
+
+#########
+# Transaction
+#########
+    
+    lv.transaction("bud path")
+    #shape object needs to be updated with a new path. Paths are passed by value, shape is by reference.
+    sel_obj.shape.path = path 
+    #cell needs to be refreshed to update the new path
+    cell.refresh()
+    pcell.refresh_pcell_path(sel_obj)
+    lv.commit()
+
+  elif utils.valid_obj(sel_obj): ## Create a new path from selection
+    #not path, but has a selection 
+    edge, foo, layer_id = utils.closest_edge_to_cursor(sel_obj, return_full = True)
+
+    # cursor at grid point, relative to the selected object
+    p_r = utils.cursor_position(True, True, True)
+
+    
+    #print(edge, p_r)
+    edge_center = edge.bbox().center()
+    edge_min = edge.bbox().p1
+    edge_max = edge.bbox().p2
+    
+    v_e = edge_max - edge_min
+    v_o = pya.Vector(v_e.y, -v_e.x)
+    v_o = v_o/v_o.length()
+    
+    p1 = edge_center
+    
+    #flag to copy the edge width of the edge we are budding from
+    copy_edge_width = bool(str(pya.Application.instance().get_config('copy-edge-width')).lower() == 'true')
+
+    if copy_edge_width:
+      path_width = v_e.length()
+    else:
+      width_str = pya.Application.instance().get_config('wg-width')
+      if any([i.isdigit() for i in width_str]):
+        path_width = int(round(float(width_str)/ly.dbu))
+      
+    
+    #check sign
+    t0 =  ((p_r - p1).sprod(v_o))
+    t = max(utils.grid(),abs(t0)) #ensures nonzero path length. If too close, generate minimum distance based on current grid unit
+    if abs(t0)&gt;0:
+      sgn_t0 = t0/abs(t0)
+    t = sgn_t0*t
+    
+    p2_proj = p1 + t*v_o 
+
+    path = pya.Path([p1, p2_proj], path_width)
+  
+    #take layer from properties
+    if layer_id is None: #None from selection
+      layer_id = lv.current_layer.current().layer_index() 
+
+#########
+# Transaction
+#########
+
+
+    lv.transaction("bud path - new")
+    
+    shape_new = cell.shapes(layer_id).insert(path)
+    
+    sel_obj = pya.ObjectInstPath()
+    sel_obj.shape = shape_new
+    sel_obj.layer = shape_new.layer
+    sel_obj.top = shape_new.cell.cell_index() 
+    object_selection = [sel_obj]  #create a new selection of the selected objects
+    lv.object_selection = object_selection
+    
+    lv.commit()
+
+
+</text>
+</klayout-macro>

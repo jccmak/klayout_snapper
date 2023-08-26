@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Path to waveguide</description>
+ <version>v2</version>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>false</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut>W</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>routing</group-name>
+ <menu-path>snapper_menu.editing_menu.editing_routing_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+path_to_waveguide
+snapper v 0.0.1
+Copyright 2023 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+Converts a selected path into waveguide routing, with corners being a selected bend cell from the device library
+
+Assumptions
+----------
+Bend cell has port marker polygons on its terminations. Used to calculate its orientation and positioning.
+
+Inputs
+----------
+Selection of a path. Path is manhattan.
+
+Parameters for routing (set in option editor)
+
+Behaviour
+----------
+
+Corners of path with sufficient clearance are replaced with the library bend cell. Straight segments of the path are filled in with straight paths.
+All other remaining non-manhattan paths are left as is.
+
+
+See also
+----------
+path_to_roundpath
+path_to_clearancepath
+revert_to_path
+'''
+
+
+import pya
+import snapper.ports as ports
+import snapper.utils as utils
+
+
+lv = pya.Application.instance().main_window().current_view()
+ly = lv.active_cellview().layout()
+topcell = lv.active_cellview().cell
+
+#the cell that we want to put these object in is the relative cell of the shape
+
+dbu = ly.dbu
+
+bend_cell_name = pya.Application.instance().get_config('bend-cell')
+# Enter your Python code here
+
+ 
+layer_str = pya.Application.instance().get_config('wg-layer')
+gdslayer, datatype = layer_str.split('/')
+gdslayer = int(gdslayer)
+datatype = int(datatype)
+layer_idx = ly.find_layer(gdslayer, datatype)
+
+
+width_str = pya.Application.instance().get_config('wg-width')
+width = 0
+try:
+  width = float(width_str)
+except:
+  pass
+
+verbose = False
+
+
+####
+#Get and analyze bend cell
+
+bend_cell_index = None
+for cc in ly.each_cell():
+  if cc.name == bend_cell_name:
+    bend_cell_index = ly.cell_by_name(cc.name)
+    
+assert(not bend_cell_index is None)
+bend_cell = ly.cell(bend_cell_index)
+
+
+port_indices, port_datatypes = ports.occupied_ports(bend_cell)#, ly)
+
+points = []
+edges  = []
+directions = []
+
+if port_indices: #not empty ports
+  
+  #list out all the edges and points
+  for ii in port_indices:
+    for ss in bend_cell.shapes(ii).each():
+      port_polygon = ss.polygon
+      #port_poly.transform(trans) #transform the poly to the current top level
+      
+      #center, edge = ports.resolve_port(port_poly)
+  
+  
+  #### resolve the port polygon
+      point = None
+      edge = None
+      length = None
+      for ee in port_polygon.each_edge():
+        if length is None:
+          length = ee.length()
+          edge = ee
+        
+        if ee.length()&lt;length:
+          length = ee.length()
+          edge = ee
+      point = (edge.p1 + edge.p2)/2.
+      
+      dist = 0
+      p_dir = None
+      #calculate the direction as well
+      for pp in port_polygon.each_point_hull():    
+        if (pp - point).length()&gt;dist:
+          p_dir = pp
+          dist =(pp-point).length()
+      direction = p_dir - point
+      
+      #print(point, edge, direction)
+      points.append(point)
+      edges.append(edge)
+      directions.append(direction)
+    
+    #check that the ports are orthogonal
+
+else:
+  #filter out edges that only lie on bounding box
+  bend_cell_region = pya.Region()
+  for idx in ly.layer_indices():
+    bend_cell_region += pya.Region(bend_cell.begin_shapes_rec(idx))
+  bend_cell_region = bend_cell_region.merge()
+  bend_cell_bbox_region = pya.Region(bend_cell.bbox())
+  bend_cell_edges = bend_cell_region.edges()
+  bend_cell_bbox_edges = bend_cell_edges.intersections((bend_cell_bbox_region.edges()))
+  
+  for e in bend_cell_bbox_edges.each():
+    #assume the bend is center at (0,0), with an edge on x-axis (y = 0), and y-axis (x = 0)
+    #check if it's the y = 0 edge
+    if abs(e.p1.y) + abs(e.p2.y) == 0:
+      edges.append(e)
+      points.append((e.p1 + e.p2)/2.)
+      directions.append(pya.Vector(0,1))
+    #check if it's the x = 0 edge
+    if abs(e.p1.x) + abs(e.p2.x) == 0:
+      edges.append(e)
+      points.append((e.p1 + e.p2)/2.)
+      directions.append(pya.Vector(1,0))      
+  
+
+is_orth = (directions[0].sprod(directions[1]) == 0)
+  
+  #check the intersection point
+
+v_rel = points[1] - points[0]
+v_rel_proj = v_rel.sprod(directions[0])/(directions[0].length()*directions[0].length())
+intersection = points[0] + v_rel_proj*directions[0]
+
+#print(is_orth)
+#print(intersection)
+  
+  #check the distance to the intersection point is equal
+dist0 = (intersection - points[0]).length()
+dist1 = (intersection - points[1]).length()
+
+assert(dist0 == dist1)
+#print(dist0, dist1)
+radius = dist0
+
+
+####
+lv.transaction("path to waveguide")
+
+#get the selected path
+object_selection = lv.object_selection
+new_selection = []
+for sel_obj in object_selection:
+  if not sel_obj.is_cell_inst() and sel_obj.shape.is_path():
+  
+    cell_sel = ly.cell(sel_obj.cell_index())
+    #new_sel_obj = path2roundpath(sel_obj, verbose = False)
+    #take the path and draw the waveguide
+    
+  #check the selected object is a path 
+    if not sel_obj.shape.is_path() and verbose:
+      pya.MessageBox.warning("Selection not a path",
+                                   "Selection must be a path", pya.MessageBox.Ok)
+      #return None                                
+    
+    sel_path = sel_obj.shape.path #this cannot directly be passed into the PCell, need to instantiate a new Path Object 
+    #ROUND_PATH only accepts DPath (but the coordinates need to be in micron). Path, and Point will not work, the PCell won't show up!
+    #https://www.klayout.de/forum/discussion/737/round-path-pcell-in-python-create-cell
+    #path = pya.DPath()
+    #path.points = [pya.DPoint(pp.x*ly.dbu, pp.y*ly.dbu) for pp in sel_path.each_point()] #need to get individual values to avoid rounding
+    #path.width = sel_path.width*ly.dbu
+    #layer_info = ly.get_info(sel_obj.layer)
+    
+    #remove the selected object
+    #sel_obj.shape.delete()
+    
+    segments, corners, boxes = utils.segment_path_corners(sel_path, int(radius)) #in dbu
+    
+    for seg in segments:
+      seg_path = pya.Path(seg, int(round(width/dbu)))
+      
+      if seg_path.length() &gt; 0:
+        cell_sel.shapes(layer_idx).insert(seg_path)
+        #print(seg_path.to_s())
+      
+    for cor in corners:
+      align_corner = cor[1]
+      align_point = (cor[0] + cor[2])/2.
+      
+      align_direction = align_point - align_corner
+      #print(align_direction)
+      
+      bend_point = (points[0] + points[1])/2.
+      bend_corner = intersection
+      bend_direction = bend_point - bend_corner
+      #print(bend_direction)
+      
+      s = bend_direction.sprod(align_direction)
+      v = bend_direction.vprod(align_direction)
+      #print(s, v)
+      
+      #rotation in degrees
+      if s &gt; 0 and v == 0:
+        rotation = 0
+      elif s&lt;0 and v == 0:
+        rotation = 180
+      elif s == 0 and v &gt; 0:
+        rotation = 90
+      elif s == 0 and v &lt; 0:
+        rotation = 270
+      
+      td1 = pya.Trans(-bend_corner) #translate the rotation origin to 0
+      
+      tr = pya.Trans()
+      tr.angle = int(rotation/90) #rotate
+      
+      td2 = pya.Trans(align_corner) #displace to required location
+      
+      t = td2*tr*td1
+      
+      cell_sel.insert(pya.CellInstArray(bend_cell_index, t))
+      cell_sel.refresh()
+      
+    #identify the corners and place instances    
+    
+    #if not new_sel_obj is None:
+    # new_selection.append(new_sel_obj)
+
+lv.object_selection = new_selection
+lv.commit()
+
+</text>
+</klayout-macro>

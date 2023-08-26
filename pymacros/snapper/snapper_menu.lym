@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Initialization</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut/>
+ <show-in-menu>false</show-in-menu>
+ <group-name/>
+ <menu-path/>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>'''
+Add toolbar menu for snapper
+
+snapper v0.0.1
+Copyright 2023 Jason Mak
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+'''
+
+menu = pya.Application.instance().main_window().menu()
+
+
+#To append after a particular menu: &lt;menu full path&gt;.end, &lt;menu name&gt;, &lt;Menu Label&gt;
+menu.insert_menu("end", "snapper_menu", "Snapper") #place Custom menu at the end of the menu
+menu.insert_menu("snapper_menu.end", "navigation_menu", "Navigation")
+
+menu.insert_menu("snapper_menu.end", "selection_menu", "Selection")
+
+menu.insert_menu("snapper_menu.end", "snap_menu", "Snap")
+
+
+menu.insert_menu("snapper_menu.end", "editing_menu", "Editing")
+menu.insert_menu("snapper_menu.editing_menu.end", "editing_cells_menu", "Cells")
+menu.insert_menu("snapper_menu.editing_menu.end", "editing_box_menu", "Box and Covers")
+menu.insert_menu("snapper_menu.editing_menu.end", "editing_grid_menu", "Grid")
+menu.insert_menu("snapper_menu.editing_menu.end", "editing_routing_menu", "Routing")
+menu.insert_menu("snapper_menu.end", "debug_menu", "Debug")
+
+#customize some initial configs
+custom_configs = {
+  "bend-radius":40,  #retain previous value
+  "wg-width":1, #retain previous value
+  "wg-layer":'', #retain previous value
+  "wg-clearance":10,
+  "bend-points":1000,
+  "bend-cell":'', #retain previous value
+
+  
+  "periodic-array-instances":5,
+  "array-pitch":250,
+  "array-buffer":20,
+
+  'port-layer':9000,
+  'snap-edge-min':0.2,
+  'curr-coords-decimals':2,
+  'copy-edge-width':True}
+  
+instance = pya.Application.instance()
+for k,v in custom_configs.items():
+  if len(instance.get_config(k))==0: #if config value doesn't natively exist, set a default value
+    instance.set_config(k, str(v))
+
+
+</text>
+</klayout-macro>
