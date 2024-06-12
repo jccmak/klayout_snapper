@@ -8,7 +8,7 @@
  <title>pymacros and library for photonic component assembly</title>
  <doc>Tools for polygon assembly and routing (e.g. snapping), targeting photonics applications
 </doc>
- <doc-url>doc/readme.html</doc-url>
+ <doc-url>https://github.com/jccmak/klayout_snapper</doc-url>
  <url/>
  <license>GPLv3</license>
  <author>Jason Mak</author>
