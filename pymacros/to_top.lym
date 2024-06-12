@@ -8,6 +8,7 @@
  <doc/>
  <autorun>true</autorun>
  <autorun-early>false</autorun-early>
+ <priority>0</priority>
  <shortcut>Home</shortcut>
  <show-in-menu>true</show-in-menu>
  <group-name>cells</group-name>

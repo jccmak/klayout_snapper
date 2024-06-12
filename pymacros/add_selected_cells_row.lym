@@ -8,6 +8,7 @@
  <doc/>
  <autorun>false</autorun>
  <autorun-early>false</autorun-early>
+ <priority>0</priority>
  <shortcut>Alt+-</shortcut>
  <show-in-menu>true</show-in-menu>
  <group-name>instances</group-name>
@@ -69,7 +70,7 @@ selected_cell_indices = [cp[-1] for cp in cell_paths]
 
 dbu = ly.dbu
 #spacing
-x_trans = 10*round(float(pya.Application.instance().get_config("wg-width"))/dbu)
+x_trans = round(float(pya.Application.instance().get_config("array-buffer"))/dbu)#10*round(float(pya.Application.instance().get_config("wg-width"))/dbu)
 
 
 

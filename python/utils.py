@@ -46,7 +46,8 @@ def get_layer_info_dict():
   layer_info_dict = {}
   for layer in lv.each_layer():
     layer_index = layer.layer_index()
-    layer_info_dict[layer_index] = layout.get_info(layer_index)
+    if layer_index>0: #to avoid invalid indices
+      layer_info_dict[layer_index] = layout.get_info(layer_index)
   return layer_info_dict
 
 def grid(dbu = True):

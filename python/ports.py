@@ -15,7 +15,7 @@ You should have received a copy of the GNU General Public License along with sna
 '''
 
 import pya
-# Enter your Python code here
+
 
 def gdslayer():
   '''

@@ -8,16 +8,17 @@
  <doc/>
  <autorun>true</autorun>
  <autorun-early>false</autorun-early>
+ <priority>0</priority>
  <shortcut/>
  <show-in-menu>false</show-in-menu>
  <group-name/>
- <menu-path/>
+ <menu-path>snapper_menu.editing_menu.text_menu</menu-path>
  <interpreter>python</interpreter>
  <dsl-interpreter-name/>
  <text>'''
 Add toolbar menu for snapper
 
-snapper v0.0.1
+snapper v0.0.2
 Copyright 2023 Jason Mak
 This file is part of snapper.
 
@@ -48,6 +49,7 @@ menu.insert_menu("snapper_menu.editing_menu.end", "editing_cells_menu", "Cells")
 menu.insert_menu("snapper_menu.editing_menu.end", "editing_box_menu", "Box and Covers")
 menu.insert_menu("snapper_menu.editing_menu.end", "editing_grid_menu", "Grid")
 menu.insert_menu("snapper_menu.editing_menu.end", "editing_routing_menu", "Routing")
+menu.insert_menu("snapper_menu.editing_menu.end", "editing_text_menu", "Text")
 menu.insert_menu("snapper_menu.end", "debug_menu", "Debug")
 
 #customize some initial configs

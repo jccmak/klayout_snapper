@@ -8,6 +8,7 @@
  <doc/>
  <autorun>true</autorun>
  <autorun-early>true</autorun-early>
+ <priority>0</priority>
  <shortcut/>
  <show-in-menu>false</show-in-menu>
  <group-name/>
@@ -55,7 +56,7 @@ class ArrayPath(pya.PCellDeclarationHelper):
     self.param("s", self.TypeShape, "", default = path) #for custom PCell, shape param shouldn't override self.path
     self.param("N", self.TypeInt, "N", default = 3)
     #self.param("sp", self.TypeDouble, "Spacing", default = 10)
-    self.param("sp2", self.TypeList, "Spacing(s)", default = [10])
+    self.param("sp2", self.TypeString, "Spacing(s)", default = "10")
     self.param("w",self.TypeDouble, "Width", default = 1)
     self.param("o",self.TypeDouble, "Center Offset", default = 0)
 
@@ -137,16 +138,19 @@ class ArrayPath(pya.PCellDeclarationHelper):
     #directions_orth_norm = [do/(do.length()) for do in directions_orth]
     
     N = int(self.N)
+    
     #sp = self.sp
     o = self.o
     sp2 = self.sp2
-    #print(sp2)
+    sp2 = str(sp2)
+    print(sp2)
     
     #parse the spacing list
+    sp2_list = sp2.split(',')
     
     #try to format everything in spacings into float. If invalid, delete
     spacings = []
-    for v in sp2:
+    for v in sp2_list:
       try:
         v_float = float(v)
       except:
@@ -155,29 +159,33 @@ class ArrayPath(pya.PCellDeclarationHelper):
         spacings.append(v_float)
     
     if len(spacings) == 0: #null list or ill formatted
-      spacings = [self.w]*N
+      spacings = [self.w]*len(edges)
     elif len(spacings) &lt; len(edges):
-      extra = [spacings[-1]]*(len(edges) - len(sp2))
+      extra = [spacings[-1]]*(len(edges) - len(sp2_list))
       spacings = spacings + extra
       
     #if same length or longer, then the loop index will automatically stop before we use up all the spacings
     
+    print(spacings)
+    print(N)
     
     for jj in range(N):
       displaced_edges = []
       
       for ii in range(len(edges)):
-        sp = spacings[ii]
+        sp = float(spacings[ii])
         e = edges[ii]
         d = e[0] - e[1]
-        d_o = pya.Vector(-d.y, d.x)
+        d_o = pya.DVector(-d.y, d.x) #DVector to work with float
         d_o_n = d_o*(1./d_o.length())
         #print(d_o_n, d_o_n.length())
 
-        p1_disp = e[0] + d_o_n*(sp*(jj - (N-1)/2.)+ o)/d_o_n.length()
-        p2_disp = e[1] + d_o_n*(sp*(jj - (N-1)/2.)+ o)/d_o_n.length()
+        p1_disp = e[0] + d_o_n*(sp*(float(jj) - (float(N)-1.)/2.)+ o)/d_o_n.length()
+        p2_disp = e[1] + d_o_n*(sp*(float(jj) - (float(N)-1.)/2.)+ o)/d_o_n.length()
         
         displaced_edges.append((p1_disp, p2_disp))
+        
+        #print(sp, e[0], e[1], p1_disp, p2_disp)
       
       path_points = []
       

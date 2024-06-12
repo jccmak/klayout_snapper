@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Cycle label justification up</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut>Shift+Up</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name/>
+ <menu-path>snapper_menu.editing_menu.editing_text_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>import snapper.text as txt
+
+# Enter your Python code here ..
+
+cycle = {repr(pya.Text.VAlignBottom):pya.Text.VAlignBottom,  repr(pya.Text.VAlignCenter):pya.Text.VAlignBottom,  repr(pya.Text.VAlignTop):pya.Text.VAlignCenter,  repr(pya.Text.NoVAlign):pya.Text.VAlignTop}
+
+txt.cycle_justification("valign", "up", cycle)
+</text>
+</klayout-macro>

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Cycle label justification right</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut>Shift+Right</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name/>
+ <menu-path>snapper_menu.editing_menu.editing_text_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>import snapper.text as txt
+
+# Enter your Python code here ..
+
+cycle = {repr(pya.Text.HAlignLeft):pya.Text.HAlignLeft,  repr(pya.Text.HAlignCenter):pya.Text.HAlignLeft,  repr(pya.Text.HAlignRight):pya.Text.HAlignCenter,  repr(pya.Text.NoVAlign):pya.Text.HAlignRight}
+
+txt.cycle_justification("halign", "right", cycle)
+</text>
+</klayout-macro>

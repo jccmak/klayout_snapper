@@ -8,6 +8,7 @@
  <doc/>
  <autorun>false</autorun>
  <autorun-early>false</autorun-early>
+ <priority>0</priority>
  <shortcut>Ctrl+Alt+A</shortcut>
  <show-in-menu>true</show-in-menu>
  <group-name>instances</group-name>
@@ -50,17 +51,30 @@ lv.transaction("snap instances to grid")
 for sel_obj in object_selection:
   if sel_obj.is_cell_inst():
     sel_inst = sel_obj.inst()
-    trans = sel_inst.trans
-    disp = trans.disp
+    dcplx_trans = sel_inst.dcplx_trans
+    disp = dcplx_trans.disp
+    print(disp.x)
+    print(disp.y)
+       
+ 
       
     #set the origin of sel_inst
     #this is stored in sel_inst.trans.disp #translation, displacement
     
-    disp.x = int(g_dbu*round(disp.x/g_dbu))
-    disp.y = int(g_dbu*round(disp.y/g_dbu))
-      
+    disp.x = int(g_dbu*round(disp.x/ly.dbu/g_dbu))*ly.dbu
+    disp.y = int(g_dbu*round(disp.y/ly.dbu/g_dbu))*ly.dbu
+
     #needs to reassign each of these objects to properly update the cell
-    trans.disp = disp
-    sel_inst.trans = trans
+    dcplx_trans.disp = disp
+    sel_inst.dcplx_trans = dcplx_trans
+    
+  #for text
+  elif sel_obj.shape.is_text():
+    text = sel_obj.shape.text
+    text.x = int(g_dbu*round(text.x/g_dbu))
+    text.y = int(g_dbu*round(text.y/g_dbu))
+    sel_obj.shape.text = text
+    
+    
 lv.commit()</text>
 </klayout-macro>
