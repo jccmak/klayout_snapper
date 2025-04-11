@@ -1,0 +1,1148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description/>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut/>
+ <show-in-menu>false</show-in-menu>
+ <group-name/>
+ <menu-path/>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>import pya
+import numpy as np
+import os
+from scipy.special import comb
+from scipy.special import fresnel
+
+class SpineBase(pya.PCellDeclarationHelper):
+  """
+  A base class for generating polygons in KLayout where the shape is defined by a 
+  centerline, widths on either side of the centerline, and tangents.
+
+  This PCell declaration provides the basic structure and functionality for creating 
+  spine-like polygons, which can be useful for defining waveguides or other structures 
+  with varying widths along a path. Subclasses should implement the `set_spine` method 
+  to define the specific centerline, widths, and tangents.
+  """
+
+  def __init__(self):
+    """
+    Initializes the SpineBase PCell.
+
+    This constructor calls the superclass constructor and declares the parameters 
+    used to define the spine polygon.
+    """
+    
+    # Important: initialize the super class
+    super(SpineBase, self).__init__()
+
+    # Initialize member variables to store spine data. These will be populated 
+    # in subclasses.    
+    self.c_x = None  # centerline x-coordinates
+    self.c_y = None  # centerline y-coordinates
+    self.w_l = None  # width on the left side of the centerline
+    self.w_r = None  # width on the right side of the centerline
+    self.t_x = None  # tangent x-components
+    self.t_y = None  # tangent y-components
+    
+    
+    # declare the parameters
+    self.param("l", self.TypeLayer, "Layer", default = pya.LayerInfo(1, 0))
+
+    
+  def display_text_impl(self):
+    """
+    Specifies the text to be displayed in the layout for this PCell.
+
+    This method is currently empty and should be implemented in subclasses if 
+    custom display text is needed.
+    """  
+    pass#return "Spine"#%(str(self.filename))#(Text=" + disp_txt + ",sz=" + ('%.3f' % self.sz) + ")"    
+  
+  def coerce_parameters_impl(self): #this makes sure
+    """
+    Coerces parameters to ensure consistency.
+
+    This method is called by KLayout to handle parameter updates. It's often used 
+    to resolve dependencies between parameters. This base class implementation 
+    is empty and may be overridden in subclasses.
+    """
+      
+    # We employ coerce_parameters_impl to decide whether the handle or the 
+    # numeric parameter has changed (by comparing against the effective 
+    # radius ru) and set ru to the effective radius. We also update the 
+    # numerical value or the shape, depending on which on has not changed.
+    pass
+  
+  def can_create_from_shape_impl(self):
+    """
+    Implements the "Create PCell from shape" protocol.
+
+    This method determines if a PCell can be created from a given shape. In this 
+    case, it returns True, indicating that any shape with a finite bounding box 
+    can be used to create this PCell.
+    """
+      
+    # Implement the "Create PCell from shape" protocol: we can use any shape which 
+    # has a finite bounding box
+    #return self.shape.is_box() or self.shape.is_polygon() or self.shape.is_path()
+    return True
+  
+  def parameters_from_shape_impl(self):
+    '''
+    Implements the "Create PCell from shape" protocol.
+
+    This method extracts parameters from a given shape. In this base class, it 
+    extracts the layer information from the shape. Subclasses may override this 
+    to extract other relevant parameters for their specific spine implementations.
+    '''  
+    # Implement the "Create PCell from shape" protocol: we set r and l from the shape's 
+    # bounding box width and layer
+    #self.r = self.shape.bbox().width() * self.layout.dbu / 2
+    self.l = self.layout.get_info(self.layer)
+    
+    '''
+    shape_bbox = self.shape.bbox()
+    dbu = self.layout.dbu
+    p1, p2 = shape_bbox.p1, shape_bbox.p2
+    width = shape_bbox.width()*dbu
+    height = shape_bbox.height()*dbu
+    
+    #new_box = pya.DBox(p1.x*dbu, p1.y*dbu, p2.x*dbu, p2.y*dbu)
+    new_box = pya.DBox(-width/2.,-height/2.,width/2., height/2.)
+    
+    self.s = new_box
+    '''
+    
+  def transformation_from_shape_impl(self):
+    """
+    Implements the "Create PCell from shape" protocol.
+
+    This method determines the transformation to apply when creating the PCell from 
+    a shape. In this base class, it returns an empty transformation, meaning no 
+    additional transformation is applied. Subclasses might override this to 
+    implement specific transformations based on the input shape.
+    """  
+    # Implement the "Create PCell from shape" protocol: we use the center of the shape's
+    # bounding box to determine the transformation
+    #return pya.Trans(self.shape.bbox().center()) 
+    return pya.Trans()
+      
+  def generate_spine_polygon(self):
+    """
+    Generates the polygon representing the spine structure.
+
+    This method uses the centerline coordinates, widths, and tangents to calculate 
+    the points of the polygon.
+
+    Returns:
+      pya.DPolygon: The polygon representing the spine.
+    """
+      
+    tangents = np.column_stack((self.t_x, self.t_y))
+    centerline = np.column_stack((self.c_x, self.c_y))
+    left_orth = np.array([np.dot(dd, [[0., 1.],[-1.,0.]]) for dd in tangents])
+    right_orth = np.array([np.dot(dd, [[0., -1.], [1., 0.]]) for dd in tangents])
+    left_points = np.array(self.w_l)[:, np.newaxis]*left_orth+ np.array(centerline)[np.newaxis, :]
+    right_points = np.array(self.w_r)[:, np.newaxis]*right_orth+ np.array(centerline)[np.newaxis, :]
+
+    left_points = left_points[0]  # Array shape currently (1, N, 2). Flatten first coordinate
+    right_points = right_points[0] # Array shape currently (1, N, 2). Flatten first coordinate
+ 
+    points = np.concatenate((left_points, right_points[::-1,:]))
+    points_list = [pya.DPoint(*pp) for pp in points]
+    polygon = pya.DPolygon(points_list)
+    return polygon
+      
+  def set_spine(self):
+    """
+    Defines the spine's centerline, widths, and tangents.
+
+    This method must be implemented in subclasses to provide the specific data 
+    that defines the spine's geometry.
+    """
+    pass #to be implemented in subclasses
+
+  def produce_impl(self):
+    """
+    Generates the layout using the defined spine.
+
+    This method is called by KLayout to produce the layout. It calls `set_spine` 
+    to get the spine data, generates the polygon using `generate_spine_polygon`, 
+    and inserts the polygon into the layout.
+    """
+    
+    # This is the main part of the implementation: create the layout
+
+    self.set_spine()  # Get the spine definition from the subclass
+    poly = self.generate_spine_polygon()  # Generate the polygon
+    self.cell.shapes(self.l_layer).insert(poly)  # Insert the polygon into the layout  
+
+    
+class File(SpineBase):
+  """
+    A PCell class that loads spine parameters from a file.
+
+    This class inherits from SpineBase and implements the functionality to load the centerline 
+    coordinates, widths, and tangents of a spine structure from an external file. The file 
+    is expected to be a comma-separated value (CSV) or text file.
+  """
+
+  def __init__(self):
+    """
+      Initializes the File PCell.
+
+      This constructor calls the superclass constructor and declares the 'filename' parameter, 
+      which specifies the path to the file containing the spine data.
+    """
+    super(File, self).__init__()
+        # dialog = pya.QFileDialog()
+        # spine_file = dialog.getOpenFileName(dialog.parent, "Open Spine File", os.getcwd(), 
+        #                                    "Spine File (*.csv *.txt)\nAll Files (*)") 
+        # This is easier to use, but how to set the filter and default path?
+    spine_file = ""  # Add a default somewhere
+    self.param("filename", self.TypeString, "File", default=spine_file)
+
+  def display_text_impl(self):
+    """
+      Specifies the text to be displayed in the layout for this PCell.
+
+        This method returns a string that includes the filename, which helps identify the 
+        PCell instance in the layout.
+      """
+    return "File(file = %s" % str(self.filename)
+
+  def set_spine(self):
+    """
+        Loads the spine parameters from the specified file.
+
+        This method overrides the `set_spine` method from the SpineBase class. It uses 
+        `numpy.loadtxt` to read the data from the file specified by `self.filename`. 
+        The data is assumed to be in a CSV or text format, where each row represents 
+        a point along the spine, and the columns contain the x-coordinates of the centerline, 
+        y-coordinates of the centerline, left widths, right widths, x-components of the tangents, 
+        and y-components of the tangents. The loaded data is then assigned to the 
+        corresponding member variables of the class.
+      """
+        # Load from file
+    X = np.loadtxt(self.filename, delimiter=',')
+    self.c_x, self.c_y, self.w_l, self.w_r, self.t_x, self.t_y = X.T
+
+class CircularLinear(SpineBase):
+  """
+  Generates a PCell shape representing a circular arc segment (bend) 
+  with a width that tapers linearly from a start width to an end width.
+
+  This class inherits from SpineBase and implements the `set_spine` method 
+  to define the specific geometry based on parameters like radius, start/end 
+  angles, and start/end widths. The taper is applied symmetrically around 
+  the centerline.
+  """
+  def __init__(self):
+    """
+    Initializes the CircularLinear PCell.
+
+    Calls the superclass constructor (SpineBase.__init__) and declares 
+    parameters specific to defining the tapered circular bend geometry.
+    """  
+    super(CircularLinear, self).__init__()
+
+
+    # Declare parameters specific to this tapered circular bend PCell
+    # Parameter Name | Type         | Description                  | Default Value
+    # ---------------|--------------|------------------------------|--------------
+
+    self.param("ts", self.TypeDouble, "theta start [deg]", default = 0)
+    self.param("te", self.TypeDouble, "theta end [deg]", default = 30)
+    self.param("ws", self.TypeDouble, "width start", default = 5)
+    self.param("we", self.TypeDouble, "width end", default = 1)
+    self.param("R", self.TypeDouble, "radius", default = 50)
+    self.param("N", self.TypeInt, "N", default = 301) 
+  def display_text_impl(self):
+    return "CircularLinear(R = {R}, W = ({ws}, {we}), theta = ({ts}, {te}))".format(R = self.R, ws = self.ws, we = self.we, ts = self.ts, te = self.te)
+  def set_spine(self):
+    """
+    Calculates and sets the spine geometry data (centerline, widths, tangents)
+    for the tapered circular bend based on the PCell parameters.
+
+    This method implements the abstract method from SpineBase required to 
+    define the shape. It generates numpy arrays for centerline coordinates,
+    left/right widths, and orientation vectors, assigning them to the 
+    corresponding instance variables (self.c_x, self.c_y, etc.).
+    """  
+    width = np.linspace(self.ws, self.we, self.N)
+    theta = np.linspace(self.ts, self.te, self.N)*np.pi/180.
+    self.c_x = self.R*np.cos(theta) - self.R
+    self.c_y = self.R*np.sin(theta)
+    self.w_l = width/2.
+    self.w_r = width/2.
+    self.t_x = np.sin(theta) #tangent is to be normalized to 1
+    self.t_y = -np.cos(theta)
+
+
+#analytic 
+
+class BezierCurve(object):
+    """
+    A utility class providing methods to calculate points, derivatives, 
+    and curvature of 2D Bézier curves defined by control points.
+
+    This class does not store state; its methods operate on data passed 
+    as arguments.
+    """
+    def B(self, t, i, n):
+        """
+        Calculates the Bernstein basis polynomial B(i, n)(t).
+
+        The Bernstein basis polynomial is used as a weighting factor for 
+        control points when calculating points on a Bézier curve.
+
+        Formula: B(i, n)(t) = C(n, i) * (t**i) * ((1-t)**(n-i))
+        where C(n, i) is the binomial coefficient "n choose i".
+
+        Args:
+            t (float or numpy.ndarray): The curve parameter(s), typically in [0, 1].
+            i (int): The index of the basis polynomial and corresponding control point.
+            n (int): The degree of the Bézier curve (n = number_of_control_points - 1).
+
+        Returns:
+            float or numpy.ndarray: The value(s) of the Bernstein basis polynomial B(i, n) at t.
+        """
+        # Calculate binomial coefficient (n choose i)
+        # Calculate t^i * (1-t)^(n-i)
+        # Return the product    
+        return comb(n, i)*(t**i)*((1-t)**(n-i))
+    
+
+    def bezier_curve_2d(self, t, cx, cy):
+        """
+        Calculates the (x, y) coordinates of points on a 2D Bézier curve.
+
+        The curve is defined by the control points (cx, cy). Points are 
+        calculated for each parameter value in t using the formula:
+        P(t) = sum_{i=0}^{n} [ B(i, n)(t) * P_i ]
+        where P_i are the control points and B(i, n) are the Bernstein basis polynomials.
+
+        Args:
+            t (numpy.ndarray): Array of parameter values (typically in [0, 1]) 
+                               at which to evaluate the curve.
+            cx (numpy.ndarray): Array of x-coordinates of the control points.
+            cy (numpy.ndarray): Array of y-coordinates of the control points. 
+                                Must have the same length as cx.
+
+        Returns:
+            tuple[numpy.ndarray, numpy.ndarray]: A tuple (x, y) containing arrays 
+                                                 of the calculated x and y coordinates 
+                                                 on the curve corresponding to the 
+                                                 input parameters t.
+        """
+        # n = number of control points
+        n = len(cx)
+
+        B_vec = [self.B(t, i, n-1) for i in range(n)]
+        B_vec = np.column_stack(B_vec)
+
+        x_series = cx[np.newaxis,:]*B_vec
+        y_series = cy[np.newaxis,:]*B_vec
+
+        x = np.sum(x_series, axis=1)
+        y = np.sum(y_series, axis=1)
+        return x, y
+    
+
+    def finite_diff(self, order, t, cx, cy):
+        """
+        Recursively calculates the control points for the derivative Bézier curve.
+
+        The control points Q_i of the k-th derivative curve are related to the 
+        control points P_i of the (k-1)-th derivative curve by:
+        Q_i = degree * (P_{i+1} - P_i) / (parameter_range) 
+        
+        Note: The division by parameter range T might differ from standard 
+        definitions if the curve parameter t is not normalized to [0, 1].
+
+        Args:
+            order (int): The desired order of the derivative (e.g., 1 for first derivative).
+            t (numpy.ndarray): Array of parameter values, used only to determine 
+                               the parameter range T = t[-1] - t[0].
+            cx (numpy.ndarray): x-coordinates of the control points for the 
+                                (current order - 1) curve.
+            cy (numpy.ndarray): y-coordinates of the control points for the 
+                                (current order - 1) curve.
+
+        Returns:
+            tuple[numpy.ndarray, numpy.ndarray]: A tuple (cxd, cyd) containing the 
+                                                 x and y coordinates of the control points 
+                                                 for the specified derivative order curve.
+        """    
+        if order == 0:
+            return cx, cy
+        else:
+            n = len(cx)
+            T = t[-1] - t[0]
+            cxp = n*(cx[1:]-cx[:-1])/T
+            cyp = n*(cy[1:]-cy[:-1])/T
+            return self.finite_diff(order - 1, t, cxp, cyp)
+        
+
+    def bezier_curve_derivative(self, order, t, cx, cy):
+        """
+        Calculates points on the specified order derivative of the Bézier curve.
+
+        It first computes the control points for the derivative curve using 
+        `finite_diff`, and then evaluates the Bézier curve defined by these 
+        derivative control points at the parameter values t using `bezier_curve_2d`.
+
+        Args:
+            order (int): The desired order of the derivative (0 for the curve itself, 
+                         1 for the first derivative, etc.).
+            t (numpy.ndarray): Array of parameter values at which to evaluate the derivative.
+            cx (numpy.ndarray): x-coordinates of the original control points.
+            cy (numpy.ndarray): y-coordinates of the original control points.
+
+        Returns:
+            tuple[numpy.ndarray, numpy.ndarray]: A tuple (dx, dy) containing arrays 
+                                                 of the x and y components of the 
+                                                 derivative vector at each parameter t.
+        """
+        cxd, cyd = self.finite_diff(order, t, cx, cy)
+        return self.bezier_curve_2d(t, cxd, cyd)
+
+
+    def curvature(self, t, cx, cy, return_all = True):
+        """
+        Calculates the curvature of the 2D Bézier curve.
+
+        It computes the curve points (0th derivative), the first derivative (velocity), 
+        and the second derivative (acceleration) using `bezier_curve_derivative`. 
+        Then, it applies the standard formula for the curvature k of a 
+        parameterized plane curve:
+        k = (x' * y'' - y' * x'') / (x'^2 + y'^2)^(3/2)
+
+        Args:
+            t (numpy.ndarray): Array of parameter values at which to calculate curvature.
+            cx (numpy.ndarray): x-coordinates of the control points.
+            cy (numpy.ndarray): y-coordinates of the control points.
+            return_all (bool, optional): If True (default), returns curvature and all 
+                                         calculated derivatives. If False, returns only 
+                                         the curvature.
+
+        Returns:
+            If return_all is True:
+                tuple: (k, x, y, xp, yp, xpp, ypp) where k is curvature, (x, y) are 
+                       curve points, (xp, yp) are first derivative components, and 
+                       (xpp, ypp) are second derivative components. All are numpy arrays.
+            If return_all is False:
+                numpy.ndarray: Array of curvature values k corresponding to t.
+        """
+        x, y = self.bezier_curve_derivative(0, t, cx, cy)
+        xp, yp = self.bezier_curve_derivative(1, t, cx, cy)
+        xpp, ypp = self.bezier_curve_derivative(2, t, cx, cy)        
+        k = (xp*ypp - yp*xpp)/(xp*xp + yp*yp)**(3/2.)
+
+        if return_all:
+            return k, x, y, xp, yp, xpp, ypp
+        else:
+            return k
+
+class BezierSBendOpt(SpineBase, BezierCurve):
+  """
+  Generates a PCell for a tapered S-bend shape using a 6-control-point 
+  Bézier curve.
+
+  This class inherits from both SpineBase (for KLayout PCell functionality)
+  and BezierCurve (for Bézier calculation methods). It uses pre-calculated 
+  polynomial coefficients (p_xi, p_k) derived from optimization studies 
+  to determine the Bézier control point configuration that aims to minimize 
+  curvature for a given height (H) to length (L) ratio.
+
+  The bend can have linearly varying width from start to end.
+  """
+  #fitted polynomial for curvature minimized s-bend
+  
+  p_xi = [ 0.08596297, -0.00074108,  0.13168859, -0.00910744, -0.02093314, 0.01065417, -0.00174005]
+  p_k = [ 6.11686977e-04,  4.55654539e+00,  1.35195167e-01, -1.47550621e+00, 4.89001063e-01,  1.85643008e-02, -2.27333399e-02]
+  def __init__(self):
+    super(BezierSBendOpt, self).__init__()
+
+    self.param("L", self.TypeDouble, "L", default = 10)
+    self.param("H", self.TypeDouble, "H", default = 2)
+    self.param("ws", self.TypeDouble, "width start", default = 1)
+    self.param("we", self.TypeDouble, "width end", default = 1)
+    self.param("N", self.TypeInt, "N", default = 201)
+    #self.param("s", self.TypeShape, "", default = path)
+    
+  def display_text_impl(self):
+    R = (1./self.k(self.H/self.L))*self.L
+    return "BezierSBendOpt(H = {H}, L = {L}, R = {R:0.2f}, W = ({ws}, {we})".format(H = self.H, L = self.L, R = R, ws = self.ws, we = self.we)
+
+  def control_points(self, xi):
+      H = self.H
+      cx = np.array([0, xi, 0.5, 0.5, 1.-xi, 1])
+      cy = np.array([0, 0, 0, H, H, H])
+      return cx, cy
+
+  def opt_func(self, p, grad):
+      cx, cy = self.control_points(p[0])
+      k = self.curvature(self.t, cx, cy, False)
+      k_abs = np.abs(k)
+      return k_abs.max() #self.opt_weight*k_abs[0] +
+      
+  def xi(self, h):
+    xi = 0
+    for i in range(len(self.p_xi)):
+      xi += self.p_xi[i]*h**i
+    return xi
+  def k(self, h):
+    k = 0
+    for i in range(len(self.p_k)):
+      k += self.p_k[i]*h**i
+    return k     
+
+  def set_spine(self):
+    #calculate the normalized curve and tangents
+    scaling = self.L
+    h = self.H/self.L
+    t = np.linspace(0, 1, self.N)
+    width = np.linspace(self.ws, self.we, self.N)
+    
+    xi = self.xi(h)
+
+    cx = np.array([0, xi, 0.5, 0.5, 1 - xi, 1.])
+    cy = np.array([0, 0, 0, h, h, h])
+    
+    k, x, y, xp, yp, xpp, ypp = self.curvature(t, cx, cy, True) 
+    
+    self.w_l = width/2.
+    self.w_r = width/2.
+    
+    self.c_x = x*scaling
+    self.c_y = y*scaling
+    
+    norm = np.sqrt(xp*xp + yp*yp)
+    self.t_x = xp/norm
+    self.t_y = yp/norm
+    
+    
+    
+        
+#bezier with linear tapering
+
+class BezierLinear(SpineBase):
+  """
+  Generates a PCell whose centerline follows a Bézier curve.
+
+  The control points for the Bézier curve are defined by the points of a 
+  KLayout DPath object provided via the 's' parameter. The width of the 
+  generated shape can be linearly tapered from start to end.
+
+  This class inherits from SpineBase and includes its own methods for 
+  calculating Bézier curve points and derivatives. The path guide shape
+  is used to provide control points for the curve, and can be initialized
+  from a supplied Path.
+  """
+  def __init__(self):
+    super(BezierLinear, self).__init__()
+
+    path = pya.DPath()
+    path.points = [pya.DPoint(0, 0), pya.DPoint(10,0)] #need to get individual values to avoid rounding
+    path.width = 1
+
+    self.param("ws", self.TypeDouble, "width start", default = 2)
+    self.param("we", self.TypeDouble, "width end", default = 1)
+    self.param("N", self.TypeInt, "N", default = 201)
+    self.param("s", self.TypeShape, "", default = path)
+    
+  def display_text_impl(self):
+    return "BezierLinear(W =({ws}, {we}))".format(ws = self.ws, we = self.we)
+
+  def coerce_parameters_impl(self): #this makes sure
+  
+    # We employ coerce_parameters_impl to decide whether the handle or the 
+    # numeric parameter has changed (by comparing against the effective 
+    # radius ru) and set ru to the effective radius. We also update the 
+    # numerical value or the shape, depending on which on has not changed.
+    pass
+  
+  def can_create_from_shape_impl(self):
+    # Implement the "Create PCell from shape" protocol: we can use any shape which 
+    # has a finite bounding box
+    return self.shape.is_box() or self.shape.is_polygon() or self.shape.is_path()
+  
+  def parameters_from_shape_impl(self):
+    """
+    Implements the "Create PCell from shape" protocol: Extracts parameters.
+
+    Sets the PCell's layer parameter ('l') based on the input shape's layer.
+    If the input shape is a Path, it extracts the path's points, converts 
+    them to DPoints (using database units), creates a DPath, and assigns 
+    it to the shape parameter 's'. This uses the drawn path's vertices as 
+    the Bézier control points.
+    """  
+    # Implement the "Create PCell from shape" protocol: we set r and l from the shape's 
+    # bounding box width and layer
+    #self.r = self.shape.bbox().width() * self.layout.dbu / 2
+    dbu = self.layout.dbu
+    self.l = self.layout.get_info(self.layer)
+    
+    if self.shape.is_path():
+      path = pya.DPath()
+      path.points = [pya.DPoint(pp.x*dbu, pp.y*dbu) for pp in self.shape.path.each_point()] #need to get individual values to avoid rounding
+      path.width = 1    
+      self.s = path
+
+  
+  def bernstein_basis_polynomial(self, t, i, n):
+      """
+      Calculates the Bernstein basis polynomial B(i, n)(t).
+
+      Args:
+          t (numpy.ndarray): Array of parameter values (typically in [0, 1]).
+          i (int): Index of the basis polynomial (0 &lt;= i &lt;= n).
+          n (int): Degree of the Bézier curve (n = number_of_control_points - 1).
+
+      Returns:
+          numpy.ndarray: The value(s) of the Bernstein basis polynomial B(i, n) at t.
+      """  
+      #t is an array of points, the parametric variable
+      #n, i  are constants
+      return comb(n,i)*(t**i)*((1-t)**(n-i))
+
+  def bezier_curve_2d(self, t, point_x, point_y):
+      """
+      Calculates the (x, y) coordinates of points on a 2D Bézier curve.
+
+      Args:
+          t (numpy.ndarray): Array of parameter values (e.g., np.linspace(0, 1, N)).
+          point_x (numpy.ndarray): Array of x-coordinates of the control points.
+          point_y (numpy.ndarray): Array of y-coordinates of the control points.
+
+      Returns:
+          numpy.ndarray: An array of shape (N, 2) containing the (x, y) coordinates 
+                         of the points on the Bézier curve corresponding to t.
+      """
+      #assumes you pass it numpy arrays
+      point_x = np.array(point_x)
+      point_y = np.array(point_y)
+      
+      n = len(point_x)
+      assert len(point_y) == n
+      
+      basis_vectors = [self.bernstein_basis_polynomial(t, i, n-1) for i in range(n)]
+      basis_vectors = np.column_stack(basis_vectors)
+      
+      assert basis_vectors.shape == (len(t),n)
+      
+      x_array = point_x[np.newaxis, :]*basis_vectors
+      y_array = point_y[np.newaxis, :]*basis_vectors
+      
+      x = np.sum(x_array, axis=1)
+      y = np.sum(y_array, axis=1)
+      
+      return np.column_stack((x,y))
+
+  def bezier_curve_tangents(self, t, x, y):
+      """
+      Calculates points on the first derivative curve (hodograph) of a Bézier curve.
+
+      The points on the derivative curve represent the tangent vectors (unnormalized) 
+      of the original Bézier curve defined by control points (x, y).
+
+      Args:
+          t (numpy.ndarray): Array of parameter values (e.g., np.linspace(0, 1, N)).
+          x (numpy.ndarray): Array of x-coordinates of the *original* control points.
+          y (numpy.ndarray): Array of y-coordinates of the *original* control points.
+
+      Returns:
+          numpy.ndarray: An array of shape (N, 2) containing the (dx/dt, dy/dt) 
+                         components corresponding to t.
+      """
+    
+      #assumes you pass it numpy arrays
+      x = np.array(x)
+      y = np.array(y)
+      
+      n = len(x)
+      assert len(y) == n
+  
+      x_tg = n*(x[1:] - x[:-1])/(t[-1] - t[0])
+      y_tg = n*(y[1:] - y[:-1])/(t[-1] - t[0])
+      return self.bezier_curve_2d(t, x_tg, y_tg)
+  
+
+  def set_spine(self):
+    """
+    Calculates and sets the spine geometry data (centerline, widths, tangents)
+    for the Bézier curve defined by the control points in `self.s`.
+
+    1. Extracts control points from the `self.s` DPath parameter.
+    2. Calculates the Bézier curve points using `bezier_curve_2d` to define the centerline.
+    3. Attempts to calculate tangent vectors. **Warning:** The tangent calculation
+       method used here appears mathematically incorrect for Bézier curves, potentially
+       leading to inaccurate shape generation. See notes below.
+    4. Normalizes the calculated tangent vectors.
+    5. Calculates and assigns tapered widths.
+    6. Assigns `c_x`, `c_y`, `w_l`, `w_r`, `t_x`, `t_y` to instance variables.
+    """
+    path = self.s
+    ctrl_points = [(pp.x, pp.y) for pp in path.each_point()]
+    M = len(ctrl_points)
+    t = np.linspace(0, 1, self.N)
+
+    ctrl_points = np.array(ctrl_points, dtype = np.float64)
+    x, y = ctrl_points.transpose()
+    centerline = self.bezier_curve_2d(t, x, y)
+    self.c_x, self.c_y = np.array(centerline).T
+    
+    tangent_coordinates = M*(centerline[1:,:] - centerline[:-1,:])
+    x_tg, y_tg = tangent_coordinates.transpose()
+    tangents = self.bezier_curve_2d(t, x_tg, y_tg)
+
+    tangents = np.array(tangents)/np.linalg.norm(tangents, axis =1)[:,np.newaxis] #normalize
+
+    self.t_x, self.t_y = tangents.T
+    
+    
+    width = np.linspace(self.ws, self.we, self.N)
+
+    self.w_l = width/2.
+    self.w_r = width/2.
+
+
+
+
+class Superellipse(object):
+    """
+    Represents a superellipse defined by x**(2n) + y**(2n) = r**(2n) 
+    in the first quadrant (x&gt;=0, y&gt;=0).
+
+    The class uses a specific parameterization where x = r * cos(t), and 
+    calculates y, derivatives, and curvature based on this. For this 
+    parameterization to map to the first quadrant superellipse, the 
+    parameter 't' should typically range from 0 to pi/2.
+
+    Attributes:
+        n (float): The exponent parameter controlling the shape (n=0.5 gives circle,
+                   n=1 gives diamond, large n approaches a square).
+        r (float): The radius parameter, determining the size (intercepts at (r,0) and (0,r)).
+    """
+    def __init__(self, n, r):
+        """
+        Initializes the Superellipse object.
+
+        Args:
+            n (float): The exponent parameter of the superellipse.
+            r (float): The radius parameter of the superellipse.
+        """    
+        self.n = n
+        self.r = r
+        
+    @property
+    def t_v(self):
+        """
+        Calculates the parameter 't' corresponding to the point where x = v.
+
+        This uses the inverse of the parameterization x(t) = r * cos(t).
+        t = arccos(x/r).
+
+        Returns:
+            float: The parameter t (in radians, typically between 0 and pi/2) 
+                   at which x(t) equals self.v.
+        """   
+        return np.arccos(self.v/self.r)
+    
+    @property
+    def v(self):
+        """
+        Calculates the coordinate value where x = y on the superellipse curve.
+        
+        This occurs at the 45-degree line in the first quadrant.
+        The value is calculated as r / (2**(1/(2*n))).
+
+        Returns:
+            float: The value v such that the point (v, v) lies on the superellipse.
+        """    
+        n, r = self.n, self.r
+        return r/(2**(1./(2*n))) # Derived from 2 * v**(2n) = r**(2n)
+
+    def x(self, t):
+        return self.r*np.cos(t)
+    
+    def y(self, t):
+        """
+        Calculates the y-coordinate for a given parameter t.
+
+        Solves the superellipse equation y = (r**(2n) - x**(2n))**(1/(2n)) 
+        for the first quadrant, using x = self.x(t).
+        Requires t to be in a range (like [0, pi/2]) such that x(t) &lt;= r.
+
+        Args:
+            t (float or numpy.ndarray): The parameter value(s) (in radians).
+
+        Returns:
+            float or numpy.ndarray: The corresponding y-coordinate(s). Returns NaN 
+                                     if the term inside the root becomes negative.
+        """    
+        n, r = self.n, self.r
+        x = self.x(t)
+        return (r**(2*n) - x**(2*n))**(1./(2*n))
+
+    def dx_dt(self, t):
+        """
+        Calculates the derivative dx/dt for the parameterization x(t) = r*cos(t).
+
+        Result: dx/dt = -r * sin(t)
+
+        Args:
+            t (float or numpy.ndarray): The parameter value(s) (in radians).
+
+        Returns:
+            float or numpy.ndarray: The derivative dx/dt evaluated at t.
+        """    
+        return -self.r*np.sin(t)
+
+    def dy_dx(self, t):
+        """
+        Calculates the derivative dy/dx.
+
+        Evaluates dy/dx = - (x/y)**(2n-1) at the point corresponding to 
+        parameter t. Uses self.x(t) and self.y(t) to find the point.
+
+        Args:
+            t (float or numpy.ndarray): The parameter value(s) (in radians).
+
+        Returns:
+            float or numpy.ndarray: The derivative dy/dx evaluated at the point(s).
+                                     Can be NaN or Inf if y=0.
+        """    
+        n, r = self.n, self.r
+        x = self.x(t)
+        return -x**(2*n - 1)*(r**(2*n) - x**(2*n))**(-1 + 1./(2*n))
+    
+    def dy_dt(self, t):
+        """
+        Calculates the derivative dy/dt using the chain rule.
+
+        Computes dy/dt = (dy/dx) * (dx/dt), evaluating each term at parameter t.
+
+        Args:
+            t (float or numpy.ndarray): The parameter value(s) (in radians).
+
+        Returns:
+            float or numpy.ndarray: The derivative dy/dt evaluated at t.
+        """
+        # Use the chain rule dy/dt = dy/dx * dx/dt    
+        return self.dy_dx(t)*self.dx_dt(t)
+
+    def d2y_dx2(self, t):
+        """
+        Calculates the second derivative d^2y/dx^2.
+
+        Uses a complex formula derived from differentiating dy/dx with respect to x.
+        The implementation directly calculates this based on x(t).
+
+        Args:
+            t (float or numpy.ndarray): The parameter value(s) (in radians).
+
+        Returns:
+            float or numpy.ndarray: The second derivative d^2y/dx^2 evaluated 
+                                     at the point corresponding to t.
+        
+        Note: The formula implemented here is complex and derived from the 
+              first derivative. Verification is recommended if high precision 
+              or robustness across all edge cases is critical.
+        """    
+        x = self.x(t)
+        n, r = self.n, self.r
+        return 2*n*x**(2*n)*x**(2*n - 1)*(-1 + 1/(2*n))*(r**(2*n) - x**(2*n))**(-1 + 1/(2*n))/(x*(r**(2*n) - x**(2*n))) - x**(2*n - 1)*(r**(2*n) - x**(2*n))**(-1 + 1/(2*n))*(2*n - 1)/x#H**(2*n)*(1-2*n)*x**(2*n - 2)*(H**(2*n) - x**(2*n))**(1./(2*n)-2)
+
+    def kappa(self, t):
+        """
+        Calculates the curvature kappa using the formula for explicit functions y=f(x).
+
+        Formula: k = y'' / (1 + (y')^2)^(3/2), where y' = dy/dx and y'' = d^2y/dx^2.
+        All derivatives are evaluated at the point corresponding to parameter t.
+
+        Args:
+            t (float or numpy.ndarray): The parameter value(s) (in radians).
+
+        Returns:
+            float or numpy.ndarray: The curvature kappa evaluated at the point(s).
+        """    
+        dy_dx = self.dy_dx(t)
+        d2y_dx2 = self.d2y_dx2(t)
+        return d2y_dx2/(1.+dy_dx**2)**(3/2.)    
+
+#superellipse
+class Superellipse90(SpineBase, Superellipse):
+  """
+  Generates a PCell for a 90-degree bend using a superellipse shape 
+  in the first quadrant (from the y-axis to the x-axis).
+
+  Inherits from SpineBase and Superellipse 
+  for the underlying shape calculations. The curve is generated by calculating 
+  the first 45 degrees (from the y-axis start to the x=y diagonal) and 
+  then using symmetry to create the second 45 degrees (from the diagonal 
+  to the x-axis end).
+
+  Attributes:
+      w (float): Constant width of the bend.
+      H (float): Defines the radius 'r' of the superellipse (intercepts at H).
+      n (float): The superellipse exponent controlling the corner sharpness.
+      N (int): Number of points used to discretize the *first half* (45 deg) 
+               of the bend. Total points will be 2*N - 1.
+  """
+  def __init__(self):
+    super(Superellipse90, self).__init__()
+
+#    self.param("ts", self.TypeDouble, "theta start [deg]", default = 0)
+#    self.param("te", self.TypeDouble, "theta end [deg]", default = 30)
+#    self.param("ws", self.TypeDouble, "width start", default = 1)
+    self.param("w", self.TypeDouble, "width", default = 1)
+    self.param("H", self.TypeDouble, "H", default = 50)
+    self.param("n", self.TypeDouble, "superellipse n", default = 2) 
+    self.param("N", self.TypeInt, "N", default = 301) 
+  def display_text_impl(self):
+    return "Superellipse90(n = {n:0.1f}, H = {H:0.1f}, W = {w:0.2f})".format(n = self.n, H = self.H, w = self.w)
+  def set_spine(self):
+    """
+    Calculates and sets the spine geometry data for the 90-degree superellipse bend.
+
+    This method implements the core logic required by SpineBase:
+    1. Sets the superellipse radius `r` from the `H` parameter. Note: also relies 
+       on `self.n` being available from the PCell parameter.
+    2. Calculates the parameter `t` range for the first 45 degrees (from start 
+       point up to where x=y) using `Superellipse.t_v`.
+    3. Calculates coordinates (`x`, `y`) and derivatives (`dx_dt`, `dy_dt`) for this 
+       first half using methods inherited from `Superellipse`.
+    4. **Manually overrides** the derivatives at the start point (t=0) to force a 
+       vertical tangent (0, 1). This might conflict with the underlying 
+       parameterization's natural start but ensures a vertical start.
+    5. Normalizes the tangent vectors for the first half.
+    6. Uses symmetry across the y=x line to calculate coordinates and tangents 
+       for the second 45 degrees.
+    7. Concatenates the two halves to form the full centerline and tangent arrays.
+    8. Assigns constant width.
+    9. Assigns calculated `c_x`, `c_y`, `w_l`, `w_r`, `t_x`, `t_y`.
+    """       
+    self.r = self.H
+    
+    #from superclass Superellipse
+    
+    t = np.linspace(0, self.t_v, self.N)
+    x, y = self.x(t), self.y(t)
+    dx_dt, dy_dt = self.dx_dt(t), self.dy_dt(t)
+    dx_dt[0] = 0
+    dy_dt[0] = 1.0    
+    norm = np.sqrt(dx_dt**2 + dy_dt**2)
+    xpn = dx_dt/norm
+    ypn = dy_dt/norm
+    
+    #symmetry about x=y
+    xs = np.array(y)
+    ys = np.array(x)
+    
+    xs = xs[::-1]
+    ys = ys[::-1]
+    
+    x_full = np.concatenate((x,  xs))
+    y_full = np.concatenate((y,  ys))
+    
+    xsp = np.array(ypn)
+    ysp = np.array(xpn)
+    xsp = -xsp[::-1]
+    ysp = -ysp[::-1]
+    xp_full = np.concatenate((xpn, xsp))
+    yp_full = np.concatenate((ypn, ysp))    
+    
+
+    self.c_x = x_full
+    self.c_y = y_full
+    
+    width = np.ones_like(x_full)*self.w
+    self.w_l = width/2.
+    self.w_r = width/2.
+    
+    
+    
+    self.t_x = xp_full #tangent is to be normalized to 1
+    self.t_y = yp_full
+
+
+
+class Superellipse180(SpineBase, Superellipse):
+  def __init__(self):
+    super(Superellipse180, self).__init__()
+
+#    self.param("ts", self.TypeDouble, "theta start [deg]", default = 0)
+#    self.param("te", self.TypeDouble, "theta end [deg]", default = 30)
+#    self.param("ws", self.TypeDouble, "width start", default = 1)
+    self.param("w", self.TypeDouble, "width", default = 1)
+    self.param("H", self.TypeDouble, "H", default = 50)
+    self.param("n", self.TypeDouble, "superellipse n", default = 2) 
+    self.param("N", self.TypeInt, "N", default = 301) 
+  def display_text_impl(self):
+    return "Superellipse180(n = {n:0.1f}, H = {H:0.1f}, W = {w:0.2f})".format(n = self.n, H = self.H, w = self.w)
+  def set_spine(self):
+ 
+    self.r = 1
+    
+    #from superclass Superellipse
+    
+    t = np.linspace(0, self.t_v, self.N)
+    phi = np.linspace(np.pi/4.,3*np.pi/4., self.N)
+    
+    x, y = self.x(t), self.y(t)
+    dx_dt, dy_dt = self.dx_dt(t), self.dy_dt(t)
+    dx_dt[0] = 0
+    dy_dt[0] = 1.0    
+    norm = np.sqrt(dx_dt**2 + dy_dt**2)
+    xpn = dx_dt/norm
+    ypn = dy_dt/norm
+    
+    xm, ym = x[-1], y[-1]
+    r = np.abs(1./self.kappa(self.t_v))
+    
+    xc0 = xm - r/np.sqrt(2)
+    yc0 = ym - r/np.sqrt(2)
+    
+    xc = r*np.cos(phi) + xc0
+    yc = r*np.sin(phi) + yc0    
+    
+    xs = 2.*x[0]-np.array(x)-2*((x[0] - xm)+r/np.sqrt(2))
+    ys = np.array(y)
+    
+    xs = xs[::-1]
+    ys = ys[::-1]
+    
+    x_full = np.concatenate((x, xc[1:-1], xs))
+    y_full = np.concatenate((y, yc[1:-1], ys))
+    
+    xcp = -np.sin(phi)
+    ycp = np.cos(phi)
+    xsp = -np.array(xpn)
+    ysp = np.array(ypn)
+    xsp = -xsp[::-1]
+    ysp = -ysp[::-1]
+    xp_full = np.concatenate((xpn, xcp[1:-1], xsp))
+    yp_full = np.concatenate((ypn, ycp[1:-1], ysp))
+    
+    h = x_full[0] - x_full[-1]
+    scaling = self.H/h
+    x_full = x_full-x_full[0]
+    x_full = x_full*scaling
+    y_full = y_full*scaling
+    
+
+    self.c_x = x_full
+    self.c_y = y_full
+    
+    width = np.ones_like(x_full)*self.w
+    self.w_l = width/2.
+    self.w_r = width/2.
+    
+    
+    
+    self.t_x = xp_full #tangent is to be normalized to 1
+    self.t_y = yp_full
+
+
+class CornuSpiral(SpineBase):
+
+  def __init__(self):
+    super(CornuSpiral, self).__init__()
+
+#    self.param("ts", self.TypeDouble, "theta start [deg]", default = 0)
+#    self.param("te", self.TypeDouble, "theta end [deg]", default = 30)
+#    self.param("ws", self.TypeDouble, "width start", default = 1)
+    self.param("w0", self.TypeDouble, "width", default = 1)
+    self.param("w1", self.TypeDouble, "tip", default = 0.2)
+    self.param("turns", self.TypeDouble, 'turns', default = 1)
+    self.param("R", self.TypeDouble, "R", default = 8)
+    
+    
+    self.param("N", self.TypeInt, "N per turn", default = 501) 
+    self.param("Nc", self.TypeInt, "N cap", default = 64)
+  def display_text_impl(self):
+    return f"CornuSpiral(turns = {self.turns:0.1f}, R = {self.R:0.1f}, w = {self.w0:0.2f}, tip = {self.w1:0.2f})"
+  def set_spine(self):
+    T = np.sqrt(4*self.turns) #
+    NN = int(np.round(self.N*T))
+    t = np.linspace(0, 1, NN)
+    u = np.linspace(0, T, NN)
+    w = self.w0 + (self.w1 - self.w0)*t
+    
+    R = self.R
+    S, C = fresnel(u)
+    S = R*S
+    C = R*C
+    
+    #tangents
+    Sp = np.sin(0.5*np.pi*u**2)
+    Cp = np.cos(0.5*np.pi*u**2)
+    
+   
+    self.c_x = C
+    self.c_y = S
+    
+    
+    self.w_l = w/2.
+    self.w_r = w/2.
+    
+    
+    
+    self.t_x = Cp #tangent is to be normalized to 1
+    self.t_y = Sp
+    
+    self.c_x_end = C[-1]
+    self.c_y_end = S[-1]
+    
+  def produce_impl(self): 
+    super(CornuSpiral, self).produce_impl()
+    
+    
+    '''
+    #add the cap polygon
+    theta = np.linspace(0, 2*np.pi, self.Nc)
+    x = 0.5*self.w1*np.cos(theta) + self.c_x_end
+    y = 0.5*self.w1*np.sin(theta) + self.c_y_end
+    
+    
+    points_list = [pya.DPoint(*pp) for pp in zip(x,y)]
+    cap_poly = pya.DPolygon(points_list)    
+    
+    self.cell.shapes(self.l_layer).insert(cap_poly)
+    '''
+
+     
+class SpineLib(pya.Library):
+  """
+  Library for this module
+  """
+
+  def __init__(self):
+    super(SpineLib,self).__init__()
+  
+    # Set the description
+    self.description = "Spine Components"
+    
+    # Create the PCell declarations
+    #self.layout().register_pcell("SpineFile", SpineFile())
+    self.layout().register_pcell("CircularLinear", CircularLinear())
+    self.layout().register_pcell("BezierLinear", BezierLinear())
+    self.layout().register_pcell("Superellipse90", Superellipse90())
+    self.layout().register_pcell("Superellipse180", Superellipse180())
+    self.layout().register_pcell("BezierSBendOpt", BezierSBendOpt())
+    self.layout().register_pcell("CornuSpiral", CornuSpiral())
+
+    
+    self.register("Spine") 
+SpineLib()</text>
+</klayout-macro>

@@ -661,6 +661,8 @@ class SBendPath(pya.PCellDeclarationHelper):
     path.width = self.w
 
     self.cell.shapes(self.l_layer).insert(path)
+    
+
 
 
 class Marker(pya.PCellDeclarationHelper):
@@ -750,6 +752,92 @@ class Marker(pya.PCellDeclarationHelper):
 
     self.cell.shapes(self.l_layer).insert(poly)
 
+class FunctionProfile(pya.PCellDeclarationHelper):
+  def __init__(self):
+    super(FunctionProfile, self).__init__()
+    self.param("s", self.TypeShape, "", default = pya.DBox(0,0,1,1)) #for custom PCell, shape param shouldn't override self.path
+    self.param("l", self.TypeLayer, "Layer", default = pya.LayerInfo(1, 0))
+    
+    self.param("N", self.TypeInt, "N", default = 301) #number of points
+    self.param("f", self.TypeString, "Function", default = "t**2")
+
+
+  def display_text_impl(self):
+    # Provide a descriptive text for the cell
+
+    return "FunctionProfile"#(f(t)=%s, t=(0,1))"%(str(self.f))#
+
+  def coerce_parameters_impl(self): #this makes sure
+  
+    # We employ coerce_parameters_impl to decide whether the handle or the 
+    # numeric parameter has changed (by comparing against the effective 
+    # radius ru) and set ru to the effective radius. We also update the 
+    # numerical value or the shape, depending on which on has not changed.
+    pass
+  
+  def can_create_from_shape_impl(self):
+    # Implement the "Create PCell from shape" protocol: we can use any shape which 
+    # has a finite bounding box
+    return self.shape.is_box() #or self.shape.is_polygon() or self.shape.is_path()
+  
+  def parameters_from_shape_impl(self):
+    # Implement the "Create PCell from shape" protocol: we set r and l from the shape's 
+    # bounding box width and layer
+    #self.r = self.shape.bbox().width() * self.layout.dbu / 2
+    self.l = self.layout.get_info(self.layer)
+    
+    shape_bbox = self.shape.bbox()
+    dbu = self.layout.dbu
+    p1, p2 = shape_bbox.p1, shape_bbox.p2
+    width = shape_bbox.width()*dbu
+    height = shape_bbox.height()*dbu
+    
+    #new_box = pya.DBox(p1.x*dbu, p1.y*dbu, p2.x*dbu, p2.y*dbu)
+    new_box = pya.DBox(0.,0.,width, height)
+    
+    self.s = new_box
+
+
+  def transformation_from_shape_impl(self):
+    # Implement the "Create PCell from shape" protocol: we use the center of the shape's
+    # bounding box to determine the transformation
+    return pya.Trans(self.shape.bbox().p1)
+
+  def produce_impl(self):
+  
+
+    ly = self.cell.layout()  #pcell is on its own layout. All layering is according to this layout
+
+  
+    # This is the main part of the implementation: create the layout
+    
+    s = self.s
+    width = s.width() #/ self.layout.dbu
+    height = s.height()#/ self.layout.dbu
+    
+    #Example
+    #create a box polygon from the corners of the box
+    x1, y1 = s.p1.x, s.p1.y
+    x2, y2 = s.p2.x, s.p2.y
+    
+    
+    #rough surface on the top, based on amplitude
+    width = x2 - x1
+    
+    t = np.linspace(0, 1, self.N)
+    x_list = width*t + x1
+    y_list = eval(self.f) + y2
+    
+    
+    x_list = [x1] + list(x_list) + [x2, x2, x1]
+    y_list = [y2] + list(y_list)+ [y2, y1, y1]
+    
+    #print(x_list, y_list)
+    
+    points_list = [pya.DPoint(*pp) for pp in zip(x_list, y_list)]
+    polygon = pya.DPolygon(points_list)
+    self.cell.shapes(self.l_layer).insert(polygon)
+
 class MyLib(pya.Library):
   """
   The library where we will put the PCell into 
@@ -768,6 +856,7 @@ class MyLib(pya.Library):
     #self.layout().register_pcell("ArrayBendPath", ArrayBendPath())
     self.layout().register_pcell("ClearancePath", ClearancePath())
     self.layout().register_pcell("Marker", Marker())
+    self.layout().register_pcell("FunctionProfile", FunctionProfile())
     # That would be the place to put in more PCells ...
     
     # Register us with the name "MyLib".
