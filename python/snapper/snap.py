@@ -765,4 +765,244 @@ If the object is an instance, we consider its bounding box.
   lv.commit()
 
   return
-    
+
+def snap_origin(verbose=False):
+  '''
+  Realign the origin of the active cell based on the current selection.
+
+  Behaviour depends on what is selected:
+
+  Case 1 - Shape (polygon/box/path) at the top level of the current cell:
+    The edge of the selected shape closest to the cursor is found. All shapes
+    and instances in the current cell are translated so that the center of that
+    edge lands at (0, 0).
+
+  Case 2 - Cell instance directly inside the current cell:
+    All shapes and instances in the current cell are translated so that the
+    origin of the selected instance lands at (0, 0). This effectively aligns
+    the current cell's coordinate system to the child cell's origin.
+
+  Case 3 - Shape or instance nested inside a child instance (sel_obj.path depth > 1):
+    The accumulated transform chain is used to bring the relevant geometry
+    (closest edge center for shapes, or child origin for instances) up to the
+    current cell's coordinate system. Everything in the current cell is then
+    translated so that point lands at (0, 0).
+
+  In all cases the operation is a pure translation of every top-level shape
+  and instance in the active cell - no hierarchy is modified.
+
+  Notes on instance position resolution
+  --------------------------------------
+  KLayout's specific_cplx_trans() on an InstElement reflects the position
+  relative to the cellview context, and returns identity for a directly-
+  selected top-level instance (path depth 1). The correct approach is:
+    - path depth 1: read sel_inst.cplx_trans directly, which holds the true
+      placement transform of the instance in the current cell.
+    - path depth > 1: use sel_inst.cplx_trans for the innermost instance and
+      accumulate specific_cplx_trans() for the outer ancestors (all elements
+      of sel_obj.path except the last), resolving everything into the current
+      cell's coordinate system.
+
+  Arguments
+  ---------
+  :verbose: <bool> If True, print debug information to stdout: selection
+            details, cursor position, accumulated transforms, candidate edges
+            and their centers, the chosen target point, and the applied
+            translation vector.
+
+  GUI Inputs
+  ----------
+  Exactly 1 selected object.
+  '''
+
+  lv = pya.Application.instance().main_window().current_view()
+  ly = lv.active_cellview().layout()
+  cell = lv.active_cellview().cell
+  dbu = ly.dbu
+
+  if verbose:
+    print("--- snap_origin ---")
+    print(f"  Active cell : '{cell.name}'  (dbu = {dbu} um)")
+
+  object_selection = list(lv.object_selection)
+  object_selection = sorted(object_selection, key=lambda x: x.seq)
+
+  if verbose:
+    print(f"  Selection count : {len(object_selection)}")
+
+  if len(object_selection) != 1:
+    pya.MessageBox.warning(
+      "Incorrect selection",
+      "Exactly 1 object must be selected to snap the origin.",
+      pya.MessageBox.Ok)
+    return
+
+  sel_obj = object_selection[0]
+
+  if verbose:
+    print(f"  Is cell instance : {sel_obj.is_cell_inst()}")
+    print(f"  Path depth       : {len(sel_obj.path)}")
+    if sel_obj.is_cell_inst():
+      print(f"  Instance cell       : '{sel_obj.inst().cell.name}'")
+      print(f"  sel_inst.cplx_trans : {sel_obj.inst().cplx_trans}")
+      for i, ie in enumerate(sel_obj.path):
+        print(f"    path[{i}] specific_cplx_trans : {ie.specific_cplx_trans()}")
+    else:
+      if sel_obj.shape.is_polygon():
+        shape_type_str = "polygon"
+      elif sel_obj.shape.is_box():
+        shape_type_str = "box"
+      elif sel_obj.shape.is_path():
+        shape_type_str = "path"
+      elif sel_obj.shape.is_text():
+        shape_type_str = "text"
+      else:
+        shape_type_str = "unknown"
+      print(f"  Shape type       : {shape_type_str}")
+      print(f"  Shape layer idx  : {sel_obj.layer}")
+      for i, ie in enumerate(sel_obj.path):
+        print(f"    path[{i}] specific_cplx_trans : {ie.specific_cplx_trans()}")
+
+  # ------------------------------------------------------------------
+  # Determine the target point (in the current cell's coordinate system)
+  # that should move to the origin.
+  # ------------------------------------------------------------------
+
+  if sel_obj.is_cell_inst():
+    # ----------------------------------------------------------------
+    # Case: a cell instance is selected.
+    # We want to move the origin of the selected instance to (0, 0).
+    #
+    # specific_cplx_trans() on path elements is context-relative and
+    # returns identity for a directly-selected top-level instance.
+    # Instead we read sel_inst.cplx_trans (the true placement of the
+    # innermost selected instance inside its immediate parent) and then
+    # walk any ancestor path elements to resolve everything into the
+    # current cell's coordinate system.
+    #
+    # sel_obj.path[-1] IS the selected instance element; the elements
+    # before it are ancestors. So:
+    #
+    #   depth 1: target = sel_inst.cplx_trans.trans(0,0)
+    #   depth N: target = (path[0] * ... * path[N-2]
+    #                      * sel_inst.cplx_trans).trans(0,0)
+    # ----------------------------------------------------------------
+
+    sel_inst = sel_obj.inst()
+
+    # Start from the innermost instance's own true placement transform.
+    cplx_trans = pya.ICplxTrans(sel_inst.cplx_trans)
+
+    if verbose:
+      print(f"  Base transform from sel_inst.cplx_trans : {cplx_trans}")
+
+    if len(sel_obj.path) > 1:
+      # Accumulate ancestor transforms (path elements except the last,
+      # which represents the selected instance itself).
+      ancestor_trans = pya.ICplxTrans()
+      for ie in sel_obj.path[:-1]:
+        step = ie.specific_cplx_trans()
+        ancestor_trans = ancestor_trans * step
+        if verbose:
+          print(f"  Ancestor accumulated transform after step : {ancestor_trans}")
+
+      # Compose ancestor chain with the innermost instance transform.
+      cplx_trans = ancestor_trans * cplx_trans
+
+    # Map the child origin (0,0) through the full transform to get its
+    # position in the current cell's coordinate system.
+    origin_in_cell = cplx_trans.trans(pya.Point(0, 0))
+    target_point = origin_in_cell
+
+    if verbose:
+      print(f"  Final accumulated transform : {cplx_trans}")
+      print(f"  Instance origin in cell coords (dbu) : {target_point}")
+      print(f"  Instance origin in cell coords (um)  : "
+            f"({target_point.x * dbu:.4f}, {target_point.y * dbu:.4f})")
+
+  else:
+    # ----------------------------------------------------------------
+    # Case: a shape is selected (polygon, box, or path).
+    # Find the edge of the shape closest to the cursor and use its
+    # center as the target point.
+    # get_edge_list applies all accumulated transforms internally via
+    # get_shape_poly_dict, so the returned edges are already in the
+    # coordinate system of the current active cell.
+    # ----------------------------------------------------------------
+
+    cursor_point = utils.cursor_position(in_dbu=True, relative=True, on_grid=False)
+
+    if verbose:
+      print(f"  Cursor position (dbu) : {cursor_point}")
+      print(f"  Cursor position (um)  : "
+            f"({cursor_point.x * dbu:.4f}, {cursor_point.y * dbu:.4f})")
+
+    edges = utils.get_edge_list(sel_obj, return_layer=False,
+                                filter_min_length=True, filter_manhattan=True)
+
+    if verbose:
+      print(f"  Candidate edges ({len(edges)} total, after min-length + Manhattan filter):")
+      for i, ee in enumerate(edges):
+        center = (ee.p1 + ee.p2) / 2.
+        print(f"    [{i}] p1=({ee.p1.x}, {ee.p1.y})  p2=({ee.p2.x}, {ee.p2.y})"
+              f"  center=({center.x:.1f}, {center.y:.1f})"
+              f"  length={ee.length()}"
+              f"  | center (um): ({center.x * dbu:.4f}, {center.y * dbu:.4f})")
+
+    if len(edges) == 0:
+      pya.MessageBox.warning(
+        "No valid edges",
+        "No valid edges found on the selected shape.\n"
+        "Edges may be too short or non-Manhattan.",
+        pya.MessageBox.Ok)
+      return
+
+    edge_centers = [(ee.p1 + ee.p2) / 2. for ee in edges]
+    idx_closest, _, _, _ = utils.closest_points(edge_centers, [cursor_point])
+    target_point = edge_centers[idx_closest]
+
+    if verbose:
+      chosen_edge = edges[idx_closest]
+      print(f"  Chosen edge index : {idx_closest}")
+      print(f"    p1=({chosen_edge.p1.x}, {chosen_edge.p1.y})  "
+            f"p2=({chosen_edge.p2.x}, {chosen_edge.p2.y})")
+      print(f"  Target point (dbu) : ({target_point.x:.1f}, {target_point.y:.1f})")
+      print(f"  Target point (um)  : ({target_point.x * dbu:.4f}, {target_point.y * dbu:.4f})")
+
+  # ------------------------------------------------------------------
+  # Translate everything in the current cell by -target_point so that
+  # target_point lands at the origin.
+  # ------------------------------------------------------------------
+
+  shift = pya.Vector(-int(round(target_point.x)), -int(round(target_point.y)))
+  trans = pya.Trans(shift)
+
+  if verbose:
+    print(f"  Translation vector (dbu) : ({shift.x}, {shift.y})")
+    print(f"  Translation vector (um)  : ({shift.x * dbu:.4f}, {shift.y * dbu:.4f})")
+
+  lv.transaction("snap origin")
+
+  # Count shapes and instances for verbose reporting
+  if verbose:
+    shape_count = sum(cell.shapes(idx).size() for idx in ly.layer_indices())
+    inst_count = sum(1 for _ in cell.each_inst())
+    print(f"  Translating {shape_count} shape(s) and {inst_count} instance(s) in '{cell.name}'")
+
+  # Move every top-level shape on every layer
+  for layer_idx in ly.layer_indices():
+    for shape in cell.shapes(layer_idx).each():
+      shape.transform(trans)
+
+  # Move every top-level instance
+  for inst in cell.each_inst():
+    inst.transform(trans)
+
+  # Clear selection - positions have moved, references are stale
+  lv.object_selection = []
+
+  lv.commit()
+
+  if verbose:
+    print("  Done. Origin snapped successfully.")
+    print("-------------------")

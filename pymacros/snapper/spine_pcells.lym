@@ -21,6 +21,8 @@ import os
 from scipy.special import comb
 from scipy.special import fresnel
 
+from scipy.special import fresnel
+
 class SpineBase(pya.PCellDeclarationHelper):
   """
   A base class for generating polygons in KLayout where the shape is defined by a 
@@ -975,7 +977,245 @@ class Superellipse90(SpineBase, Superellipse):
     self.t_x = xp_full #tangent is to be normalized to 1
     self.t_y = yp_full
 
+class TaperSuperellipse90(SpineBase, Superellipse, BezierCurve):
+  """
+  Generates a PCell for a 90-degree bend using a superellipse shape 
+  with width varying along the path according to a Bézier curve.
+  
+  The width profile is defined by Bézier control points in (t, width) space,
+  where t is the normalized arc length parameter [0, 1] along the curve.
+  
+  Inherits from SpineBase, Superellipse, and BezierCurve.
+  
+  Attributes:
+      H (float): Defines the radius 'r' of the superellipse (intercepts at H).
+      n (float): The superellipse exponent controlling the corner sharpness.
+      N (int): Number of points used to discretize the *first half* (45 deg) 
+               of the bend. Total points will be 2*N - 1.
+      t_bezier (list): List of t-coordinates (normalized arc length) for 
+                       Bézier control points.
+      width_bezier (list): List of width values for Bézier control points.
+      make_symmetric (bool): If True, mirrors the width profile from [0, 0.5] 
+                            to [0.5, 1.0] for symmetric tapering.
+  """
+  def __init__(self):
+    super(TaperSuperellipse90, self).__init__()
 
+    self.param("H", self.TypeDouble, "H", default = 50)
+    self.param("n", self.TypeDouble, "superellipse n", default = 2) 
+    self.param("N", self.TypeInt, "N", default = 301)
+    
+    # Bézier width profile parameters
+    # Default: linear taper from 2.0 to 0.5
+    self.param("t_bezier", self.TypeString, "t control points (comma-separated)", default = "0.0, 1.0")
+    self.param("width_bezier", self.TypeString, "width control points (comma-separated)", default = "2.0, 0.5")
+    self.param("make_symmetric", self.TypeBoolean, "Symmetric taper", default = False)
+    
+  def display_text_impl(self):
+    sym_str = ", symmetric" if self.make_symmetric else ""
+    return "TaperSuperellipse90(n = {n:0.1f}, H = {H:0.1f}{sym})".format(
+        n = self.n, H = self.H, sym = sym_str)
+  
+  def parse_control_points(self):
+      """
+      Parses the string parameters for Bézier control points into numpy arrays.
+      If the lists have different lengths, truncates to the shorter length.
+      Handles edge cases: empty strings, single control points, and out-of-range values.
+      
+      Returns:
+          tuple: (t_ctrl, width_ctrl) as numpy arrays
+      """
+      # Handle empty/whitespace strings - use default linear profile
+      t_str = self.t_bezier.strip()
+      w_str = self.width_bezier.strip()
+      
+      if not t_str or not w_str:
+        # Default to simple linear profile from 0 to 1
+        return np.array([0.0, 1.0]), np.array([1.0, 1.0])
+      
+      # Parse comma-separated strings into float arrays
+      try:
+        t_ctrl = np.array([float(x.strip()) for x in t_str.split(',') if x.strip()])
+        width_ctrl = np.array([float(x.strip()) for x in w_str.split(',') if x.strip()])
+      except ValueError:
+        # If parsing fails, return default
+        return np.array([0.0, 1.0]), np.array([1.0, 1.0])
+      
+      # Handle empty arrays after parsing
+      if len(t_ctrl) == 0 or len(width_ctrl) == 0:
+        return np.array([0.0, 1.0]), np.array([1.0, 1.0])
+      
+      # If lengths don't match, truncate to shorter length
+      min_len = min(len(t_ctrl), len(width_ctrl))
+      t_ctrl = t_ctrl[:min_len]
+      width_ctrl = width_ctrl[:min_len]
+      
+      # Handle single control point - create linear profile
+      if len(t_ctrl) == 1:
+        # Extend to two points: [0, t_ctrl[0]] or [t_ctrl[0], 1] depending on value
+        if t_ctrl[0] &lt; 0.5:
+          t_ctrl = np.array([t_ctrl[0], 1.0])
+          width_ctrl = np.array([width_ctrl[0], width_ctrl[0]])
+        else:
+          t_ctrl = np.array([0.0, t_ctrl[0]])
+          width_ctrl = np.array([width_ctrl[0], width_ctrl[0]])
+      
+      # Clip t values to [0, 1] range instead of raising error
+      # This allows out-of-range values to be automatically corrected
+      t_ctrl = np.clip(t_ctrl, 0.0, 1.0)
+      
+      # Sort by t values to ensure monotonic progression
+      sort_idx = np.argsort(t_ctrl)
+      t_ctrl = t_ctrl[sort_idx]
+      width_ctrl = width_ctrl[sort_idx]
+      
+      return t_ctrl, width_ctrl
+  
+  def make_symmetric_control_points(self, t_ctrl, width_ctrl):
+    """
+    Creates symmetric control points by mirroring the first half.
+    
+    Takes control points from [0, 0.5] and mirrors them to [0.5, 1.0].
+    
+    Args:
+        t_ctrl (numpy.ndarray): Original t control points
+        width_ctrl (numpy.ndarray): Original width control points
+    
+    Returns:
+        tuple: (t_sym, width_sym) as symmetric control point arrays
+    """
+    # Find indices where t &lt;= 0.5
+    first_half_mask = t_ctrl &lt;= 0.5
+    
+    # Get first half control points
+    t_first = t_ctrl[first_half_mask]
+    w_first = width_ctrl[first_half_mask]
+    
+    # Mirror to second half (excluding the point at t=0.5 if it exists to avoid duplication)
+    # t_mirror: 0.5 + (0.5 - t) for each t in first half
+    # This maps: 0 -&gt; 1, 0.25 -&gt; 0.75, 0.5 -&gt; 0.5
+    
+    # Check if we have exactly t=0.5
+    has_midpoint = np.any(np.isclose(t_first, 0.5))
+    
+    if has_midpoint:
+      # Exclude the midpoint from mirroring
+      mirror_mask = ~np.isclose(t_first, 0.5)
+      t_to_mirror = t_first[mirror_mask]
+      w_to_mirror = w_first[mirror_mask]
+    else:
+      t_to_mirror = t_first
+      w_to_mirror = w_first
+    
+    # Create mirrored points (reversed order for proper sequencing)
+    t_mirror = 1.0 - t_to_mirror[::-1]
+    w_mirror = w_to_mirror[::-1]
+    
+    # Combine: first half + mirrored second half
+    t_sym = np.concatenate([t_first, t_mirror])
+    w_sym = np.concatenate([w_first, w_mirror])
+    
+    return t_sym, w_sym
+  
+  def compute_width_profile(self, t_curve):
+    """
+    Computes the width at each point along the curve using the Bézier profile.
+    
+    Args:
+        t_curve (numpy.ndarray): Normalized arc length parameter values [0, 1]
+                                 at each point along the superellipse curve.
+    
+    Returns:
+        numpy.ndarray: Width values at each point along the curve.
+    """
+    # Parse control points
+    t_ctrl, width_ctrl = self.parse_control_points()
+    
+    # Apply symmetry if requested
+    if self.make_symmetric:
+      t_ctrl, width_ctrl = self.make_symmetric_control_points(t_ctrl, width_ctrl)
+    
+    # Use BezierCurve methods to evaluate width as function of t
+    # We need to evaluate a 1D Bézier curve: width(t)
+    # We'll use bezier_curve_2d but only use the second component
+    
+    # Normalize t_ctrl to [0, 1] parameter space for Bézier evaluation
+    # The control points are already in [0, 1] space for t
+    
+    # Create dummy x coordinates (could be just t_ctrl itself)
+    x_ctrl = t_ctrl
+    y_ctrl = width_ctrl
+    
+    # Evaluate Bézier curve at t_curve positions
+    # Note: t_curve represents arc length, and we want to map it to the Bézier parameter
+    # Since both are in [0, 1], we can directly use t_curve
+    x_eval, width_eval = self.bezier_curve_2d(t_curve, x_ctrl, y_ctrl)
+    
+    return width_eval
+  
+  def set_spine(self):
+      """
+      Calculates and sets the spine geometry data for the 90-degree superellipse bend
+      with Bézier-defined width taper.
+      
+      Extends the Superellipse90 implementation to use a Bézier curve for width
+      variation instead of constant width.
+      """       
+      self.r = self.H
+      
+      # Generate superellipse curve (same as Superellipse90)
+      t = np.linspace(0, self.t_v, self.N)
+      x, y = self.x(t), self.y(t)
+      dx_dt, dy_dt = self.dx_dt(t), self.dy_dt(t)
+      dx_dt[0] = 0
+      dy_dt[0] = 1.0    
+      norm = np.sqrt(dx_dt**2 + dy_dt**2)
+      xpn = dx_dt/norm
+      ypn = dy_dt/norm
+      
+      # Symmetry about x=y to create second half
+      xs = np.array(y)
+      ys = np.array(x)
+      
+      xs = xs[::-1]
+      ys = ys[::-1]
+      
+      x_full = np.concatenate((x, xs))
+      y_full = np.concatenate((y, ys))
+      
+      xsp = np.array(ypn)
+      ysp = np.array(xpn)
+      xsp = -xsp[::-1]
+      ysp = -ysp[::-1]
+      xp_full = np.concatenate((xpn, xsp))  # Fixed: was xcp, should be xsp
+      yp_full = np.concatenate((ypn, ysp))    
+      
+      # Compute normalized arc length parameter
+      # We need to compute cumulative arc length along the curve
+      dx = np.diff(x_full, prepend=x_full[0])
+      dy = np.diff(y_full, prepend=y_full[0])
+      ds = np.sqrt(dx**2 + dy**2)
+      s = np.cumsum(ds)
+      s = s - s[0]  # Start at 0
+      
+      # Normalize to [0, 1]
+      if s[-1] &gt; 0:
+        t_curve = s / s[-1]
+      else:
+        t_curve = np.linspace(0, 1, len(s))
+      
+      # Compute width profile using Bézier curve
+      width = self.compute_width_profile(t_curve)
+      
+      # Set spine parameters
+      self.c_x = x_full
+      self.c_y = y_full
+      
+      self.w_l = width/2.
+      self.w_r = width/2.
+      
+      self.t_x = xp_full
+      self.t_y = yp_full
 
 class Superellipse180(SpineBase, Superellipse):
   def __init__(self):
@@ -1121,7 +1361,730 @@ class CornuSpiral(SpineBase):
     self.cell.shapes(self.l_layer).insert(cap_poly)
     '''
 
-     
+
+class EulerBend(SpineBase):
+  """
+  Generates a PCell for an Euler bend (clothoid/spiral) with constant or tapered width.
+  
+  An Euler spiral has linearly increasing curvature, making it ideal for low-loss
+  waveguide bends. The curvature varies from 0 (straight) to maximum curvature
+  over the length of the bend.
+  
+  Attributes:
+      theta (float): Total bend angle in degrees.
+      R (float): Minimum radius of curvature (at the point of maximum curvature).
+      ws (float): Width at the start of the bend.
+      we (float): Width at the end of the bend.
+      N (int): Number of discretization points.
+  """
+  
+  def __init__(self):
+    super(EulerBend, self).__init__()
+    
+    self.param("theta", self.TypeDouble, "Bend angle [deg]", default = 90)
+    self.param("R", self.TypeDouble, "Min radius", default = 50)
+    self.param("ws", self.TypeDouble, "Width start", default = 1)
+    self.param("we", self.TypeDouble, "Width end", default = 1)
+    self.param("N", self.TypeInt, "N", default = 501)
+    
+  def display_text_impl(self):
+    return "EulerBend(θ={theta}°, R={R}, W=({ws},{we}))".format(
+        theta=self.theta, R=self.R, ws=self.ws, we=self.we)
+  
+  def set_spine(self):
+    """
+    Calculates and sets the spine geometry for an Euler spiral bend.
+    
+    Uses direct integration of the Euler spiral equations.
+    """
+    
+    # Convert angle to radians
+    theta_rad = self.theta * np.pi / 180.0
+    
+    # For Euler spiral: total angle θ relates to arc length L and min radius R by:
+    # θ = L / (2*R), so L = 2*R*θ
+    L = 2.0 * self.R * theta_rad
+    
+    # Parameter along the curve
+    s = np.linspace(0, L, self.N)
+    
+    # Angle at each point: φ(s) = s²/(2*L*R)
+    # This gives φ(L) = L/(2*R) = θ
+    phi = s**2 / (2.0 * L * self.R)
+    
+    # Integrate to get coordinates
+    # x = ∫cos(φ(s))ds, y = ∫sin(φ(s))ds
+    # Use cumulative trapezoidal integration
+    dx = np.cos(phi)
+    dy = np.sin(phi)
+    
+    # Numerical integration
+    x = np.zeros(self.N)
+    y = np.zeros(self.N)
+    
+    for i in range(1, self.N):
+      ds = s[i] - s[i-1]
+      x[i] = x[i-1] + dx[i] * ds
+      y[i] = y[i-1] + dy[i] * ds
+    
+    # Tangent vectors
+    tx = np.cos(phi)
+    ty = np.sin(phi)
+    
+    # Width taper
+    width = np.linspace(self.ws, self.we, self.N)
+    
+    # Set spine parameters
+    self.c_x = x
+    self.c_y = y
+    self.w_l = width / 2.0
+    self.w_r = width / 2.0
+    self.t_x = tx
+    self.t_y = ty
+
+
+class Euler90(SpineBase):
+  """
+  Generates a PCell for a 90-degree bend using symmetric Euler spirals.
+  
+  The bend consists of:
+  - Entry Euler spiral (curvature 0 → 1/R)
+  - Exit Euler spiral (curvature 1/R → 0)
+  
+  The curve starts at (H, 0) and ends at (0, H), curving concave toward (0,0)
+  like a quarter circle arc.
+  
+  Attributes:
+      H (float): Physical height (vertical displacement) of the bend.
+      ws (float): Width at the start of the bend.
+      we (float): Width at the end of the bend.
+      N (int): Number of discretization points per half.
+  """
+  
+  def __init__(self):
+    super(Euler90, self).__init__()
+    
+    self.param("H", self.TypeDouble, "Height", default = 50)
+    self.param("ws", self.TypeDouble, "Width start", default = 1)
+    self.param("we", self.TypeDouble, "Width end", default = 1)
+    self.param("N", self.TypeInt, "N per half", default = 301)
+    
+  def display_text_impl(self):
+    if hasattr(self, '_calculated_R'):
+      R_display = self._calculated_R
+    else:
+      R_display = self.H * 0.7
+    
+    return "Euler90(H={H}, R={R:.2f}, W=({ws},{we}))".format(
+        H=self.H, R=R_display, ws=self.ws, we=self.we)
+
+  def calculate_R_from_H(self, H_target):
+      # For a 90-degree bend (two 45-degree spirals)
+      angle_mid = np.pi / 4.0
+      
+      # The 'limit' for SciPy's Fresnel S(x) to reach angle_mid
+      # angle = (pi/2) * limit^2  =&gt;  limit = sqrt(2 * angle / pi)
+      limit = np.sqrt(2.0 * angle_mid / np.pi) # result: 0.7071
+      
+      # Get SciPy's Fresnel Sine value
+      s_val, c_val = fresnel(limit) # s_val is ~0.177
+      
+      # The correct geometric multiplier for SciPy definition
+      # x_mid = R * 2 * angle_mid * (C(limit) / limit)
+      # y_mid = R * 2 * angle_mid * (S(limit) / limit)
+      # H = x_mid + y_mid (due to the 45-degree symmetry/mirroring)
+      
+      K = (2.0 * angle_mid / limit) * (s_val + c_val)
+      
+      return H_target / K
+  
+  def set_spine(self):
+      """
+      Creates a symmetric 90-degree Euler bend from (H, 0) to (0, H).
+      """
+      
+      R = self.calculate_R_from_H(self.H)
+      self._calculated_R = R
+      
+      half_angle = np.pi / 4.0
+      L_half = 2.0 * R * half_angle
+      
+      # === First Euler spiral (0° to 45°) ===
+      s1 = np.linspace(0, L_half, self.N)
+      phi1 = s1**2 / (2.0 * L_half * R)
+      
+      x1 = np.zeros(self.N)
+      y1 = np.zeros(self.N)
+      dx1 = np.cos(phi1)
+      dy1 = np.sin(phi1)
+      
+      for i in range(1, self.N):
+        ds = s1[i] - s1[i-1]
+        x1[i] = x1[i-1] + dx1[i] * ds
+        y1[i] = y1[i-1] + dy1[i] * ds
+      
+      # === Second Euler spiral (45° to 90°) ===
+      s2 = np.linspace(0, L_half, self.N)
+      phi2 = half_angle + s2/R - s2**2 / (2.0 * L_half * R)
+      
+      x2 = np.zeros(self.N)
+      y2 = np.zeros(self.N)
+      x2[0] = x1[-1]
+      y2[0] = y1[-1]
+      dx2 = np.cos(phi2)
+      dy2 = np.sin(phi2)
+      
+      for i in range(1, self.N):
+        ds = s2[i] - s2[i-1]
+        x2[i] = x2[i-1] + dx2[i] * ds
+        y2[i] = y2[i-1] + dy2[i] * ds
+      
+      # === Combine ===
+      x_full = np.concatenate([x1, x2[1:]])
+      y_full = np.concatenate([y1, y2[1:]])
+      tx_full = np.concatenate([dx1, dx2[1:]])
+      ty_full = np.concatenate([dy1, dy2[1:]])
+      
+      # === Transform: scale, rotate -90°, translate ===
+      # Original goes 0° to 90° pointing right then up
+      # We want 0° to 90° from (H,0) pointing up to (0,H) pointing left
+      # Rotate -90°: (x,y) -&gt; (y, -x), then flip and translate
+      
+      scale = self.H / y_full[-1]
+      
+      # Rotate by -90° (clockwise): (x, y) -&gt; (y, -x)
+      x_rot = y_full * scale
+      y_rot = -x_full * scale
+      
+      # Now starts at (0, 0) going up, ends at (H, 0) going left
+      # We want to start at (H, 0) going up, end at (0, H) going left
+      # So translate and flip x: x -&gt; H - x
+      self.c_x = self.H - x_rot
+      self.c_y = -y_rot
+      
+      # Rotate tangents by -90°: (tx, ty) -&gt; (ty, -tx)
+      # Then flip x-component: tx -&gt; -tx
+      self.t_x = -ty_full
+      self.t_y = tx_full
+      
+      # Width taper
+      width = np.linspace(self.ws, self.we, len(self.c_x))
+      self.w_l = width / 2.0
+      self.w_r = width / 2.0
+
+
+class ArchimedeanSpiral(SpineBase):
+  """
+  Generates a PCell for an Archimedean spiral with linearly tapered width.
+  
+  An Archimedean spiral has the property that the distance between successive 
+  turns is constant. The radius increases linearly with angle: r(θ) = r0 + a*θ,
+  where 'a' is the radius increment per radian (derived from radius_per_turn).
+  
+  The spiral starts at position (r0, 0) with a vertical tangent.
+  
+  Attributes:
+      r0 (float): Starting radius of the spiral.
+      radius_per_turn (float): Radial distance between successive turns (2π increment).
+      turns (float): Number of complete turns (rotations) of the spiral.
+      clockwise (bool): If True, spiral goes clockwise; if False, counterclockwise.
+      ws (float): Width at the start of the spiral.
+      we (float): Width at the end of the spiral.
+      N (int): Number of discretization points.
+  """
+  
+  def __init__(self):
+    super(ArchimedeanSpiral, self).__init__()
+    
+    self.param("r0", self.TypeDouble, "Starting radius", default = 10)
+    self.param("radius_per_turn", self.TypeDouble, "Radius increase per turn", default = 5)
+    self.param("turns", self.TypeDouble, "Number of turns", default = 3)
+    self.param("clockwise", self.TypeBoolean, "Clockwise", default = False)
+    self.param("ws", self.TypeDouble, "Width start", default = 1)
+    self.param("we", self.TypeDouble, "Width end", default = 1)
+    self.param("N", self.TypeInt, "N", default = 501)
+    
+  def calculate_arc_length(self):
+    """
+    Calculates the total arc length of the Archimedean spiral.
+    
+    For an Archimedean spiral r(θ) = r0 + a*θ, the arc length is:
+    L = ∫√(r² + (dr/dθ)²) dθ = ∫√((r0 + a*θ)² + a²) dθ
+    
+    Using substitution u = r0/a + θ, the integral evaluates to:
+    L = (a/2) * [u*√(1+u²) + sinh⁻¹(u)] from r0/a to r0/a + θ_max
+    
+    Returns:
+        float: Total arc length of the spiral
+    """
+    a = self.radius_per_turn / (2.0 * np.pi)
+    theta_max = 2.0 * np.pi * self.turns
+    
+    if a &gt; 0:
+      u1 = self.r0 / a
+      u2 = self.r0 / a + theta_max
+      
+      def arc_length_term(u):
+        return u * np.sqrt(1 + u**2) + np.arcsinh(u)
+      
+      total_length = (a / 2.0) * (arc_length_term(u2) - arc_length_term(u1))
+    else:
+      # If a = 0, it's a circle
+      total_length = self.r0 * theta_max
+    
+    return total_length
+  
+  def display_text_impl(self):
+    total_length = self.calculate_arc_length()
+    direction = "CW" if self.clockwise else "CCW"
+    
+    return "ArchimedeanSpiral(r0={r0}, Δr={dr}/turn, turns={t}, {dir}, L={L:.2f}, W=({ws},{we}))".format(
+        r0=self.r0, dr=self.radius_per_turn, t=self.turns, dir=direction, L=total_length, ws=self.ws, we=self.we)
+  
+  def set_spine(self):
+    """
+    Calculates and sets the spine geometry for an Archimedean spiral.
+    
+    The spiral starts at (r0, 0) with a vertical tangent and follows r(θ) = r0 + a*θ.
+    
+    For counterclockwise (default):
+    - Starts at (r0, 0) pointing up (tangent = (0, 1))
+    - θ starts at 0 and increases
+    
+    For clockwise:
+    - Starts at (r0, 0) pointing up (tangent = (0, 1))
+    - θ starts at 0 and increases, but y-coordinates are negated
+    """
+    
+    # Calculate the growth rate per radian
+    a = self.radius_per_turn / (2.0 * np.pi)
+    
+    # Total angle to sweep (in radians)
+    theta_max = 2.0 * np.pi * self.turns
+    
+    # Create angle array
+    theta = np.linspace(0, theta_max, self.N)
+    
+    # Calculate radius at each angle: r(θ) = r0 + a*θ
+    r = self.r0 + a * theta
+    
+    # Convert to Cartesian coordinates
+    # Standard spiral equation in polar coords, but we need to start at (r0, 0)
+    # with vertical tangent. Standard parameterization has tangent in radial direction.
+    # We need to offset the angle by -π/2 so that θ=0 corresponds to (r0, 0)
+    # and the tangent points upward (perpendicular to radial direction)
+    
+    x = r * np.cos(theta - np.pi/2)
+    y = r * np.sin(theta - np.pi/2)
+    
+    # For clockwise, negate y
+    if self.clockwise:
+      y = -y
+    
+    # Calculate tangent vectors
+    # The tangent in polar coordinates is perpendicular to radius
+    # For counterclockwise: tangent points in direction of increasing θ
+    # dx/dθ = dr/dθ * cos(θ - π/2) - r * sin(θ - π/2)
+    # dy/dθ = dr/dθ * sin(θ - π/2) + r * cos(θ - π/2)
+    
+    dx_dtheta = a * np.cos(theta - np.pi/2) - r * np.sin(theta - np.pi/2)
+    dy_dtheta = a * np.sin(theta - np.pi/2) + r * np.cos(theta - np.pi/2)
+    
+    # For clockwise, negate dy
+    if self.clockwise:
+      dy_dtheta = -dy_dtheta
+    
+    # Normalize tangent vectors
+    norm = np.sqrt(dx_dtheta**2 + dy_dtheta**2)
+    tx = dx_dtheta / norm
+    ty = dy_dtheta / norm
+    
+    # Width taper
+    width = np.linspace(self.ws, self.we, self.N)
+    
+    # Set spine parameters
+    self.c_x = x
+    self.c_y = y
+    self.w_l = width / 2.0
+    self.w_r = width / 2.0
+    self.t_x = tx
+    self.t_y = ty
+
+
+class ArchimedeanConnector(SpineBase):
+  """
+  Generates a PCell for an Euler spiral connector that transitions from a straight
+  section (zero curvature) to match the starting curvature of an Archimedean spiral.
+  
+  This connector uses an Euler spiral (clothoid) which has linearly increasing
+  curvature, making it ideal for smooth transitions. The connector ends with
+  curvature matching the Archimedean spiral's starting curvature and the correct
+  tangent angle to connect seamlessly.
+  
+  The connector starts at (0, 0) pointing in the +x direction (horizontal, tangent = (1, 0))
+  and curves to end with a vertical tangent (0, 1) at the appropriate curvature.
+  
+  Attributes:
+      r0 (float): Starting radius of the Archimedean spiral to connect to.
+      radius_per_turn (float): Radius increase per turn of the Archimedean spiral.
+      clockwise (bool): Whether the target spiral is clockwise (affects connector direction).
+      ws (float): Width at the start of the connector.
+      we (float): Width at the end of the connector.
+      N (int): Number of discretization points.
+  """
+  
+  def __init__(self):
+    super(ArchimedeanConnector, self).__init__()
+    
+    self.param("r0", self.TypeDouble, "Target starting radius", default = 10)
+    self.param("radius_per_turn", self.TypeDouble, "Target radius increase per turn", default = 5)
+    self.param("clockwise", self.TypeBoolean, "Clockwise connection", default = False)
+    self.param("ws", self.TypeDouble, "Width start", default = 1)
+    self.param("we", self.TypeDouble, "Width end", default = 1)
+    self.param("N", self.TypeInt, "N", default = 301)
+    
+  def calculate_target_curvature(self):
+    """
+    Calculates the curvature at the starting point of the Archimedean spiral.
+    
+    For an Archimedean spiral r(θ) = r0 + a*θ, the curvature κ is:
+    κ = (r² + 2(dr/dθ)² - r(d²r/dθ²)) / (r² + (dr/dθ)²)^(3/2)
+    
+    Since dr/dθ = a (constant) and d²r/dθ² = 0:
+    κ = (r² + 2a²) / (r² + a²)^(3/2)
+    
+    At θ = 0 (starting point): r = r0
+    κ₀ = (r0² + 2a²) / (r0² + a²)^(3/2)
+    
+    Returns:
+        float: Curvature at the start of the Archimedean spiral
+    """
+    a = self.radius_per_turn / (2.0 * np.pi)
+    r = self.r0
+    
+    kappa = (r**2 + 2*a**2) / (r**2 + a**2)**(3/2)
+    
+    return kappa
+  
+  def calculate_connector_length(self):
+    """
+    Calculates the arc length of the Euler spiral connector.
+    
+    For an Euler spiral connecting from curvature 0 to κ_target over angle θ_total,
+    the relationship is: κ(s) = κ_target * s / L
+    where L is the total arc length and s is arc length parameter.
+    
+    The total angle swept is: θ_total = π/2 (90 degrees, from horizontal to vertical)
+    For Euler spiral: θ = (1/2) * κ_max * L
+    Therefore: L = 2 * θ_total / κ_max
+    
+    Returns:
+        float: Arc length of the connector
+    """
+    kappa_target = self.calculate_target_curvature()
+    theta_total = np.pi / 2.0  # 90 degrees
+    
+    # For Euler spiral: θ = (1/2) * κ_max * L
+    L = 2.0 * theta_total / kappa_target
+    
+    return L
+  
+  def display_text_impl(self):
+    kappa = self.calculate_target_curvature()
+    length = self.calculate_connector_length()
+    R_eff = 1.0 / kappa if kappa &gt; 0 else float('inf')
+    direction = "CW" if self.clockwise else "CCW"
+    
+    return "ArchimedeanConnector(→r0={r0}, {dir}, κ={k:.4f}, R_eff={R:.2f}, L={L:.2f}, W=({ws},{we}))".format(
+        r0=self.r0, dir=direction, k=kappa, R=R_eff, L=length, ws=self.ws, we=self.we)
+  
+  def set_spine(self):
+    """
+    Calculates and sets the spine geometry for the Euler spiral connector.
+    
+    The connector:
+    - Starts at (0, 0) with tangent (1, 0) - horizontal, pointing right
+    - Ends with tangent (0, ±1) - vertical, pointing up (CCW) or down (CW)
+    - Curvature increases linearly from 0 to κ_target
+    - Total angle swept is π/2 (90 degrees)
+    """
+    
+    # Calculate target curvature and arc length
+    kappa_target = self.calculate_target_curvature()
+    L = self.calculate_connector_length()
+    
+    # Arc length parameter
+    s = np.linspace(0, L, self.N)
+    
+    # For Euler spiral: curvature κ(s) = κ_max * s / L
+    kappa_s = kappa_target * s / L
+    
+    # Angle at each point: φ(s) = ∫κ(s')ds' = (1/2) * κ_max * s² / L
+    phi = 0.5 * kappa_target * s**2 / L
+    
+    # Integrate to get coordinates
+    # x(s) = ∫cos(φ(s'))ds'
+    # y(s) = ∫sin(φ(s'))ds'
+    dx = np.cos(phi)
+    dy = np.sin(phi)
+    
+    # Numerical integration
+    x = np.zeros(self.N)
+    y = np.zeros(self.N)
+    
+    for i in range(1, self.N):
+      ds = s[i] - s[i-1]
+      x[i] = x[i-1] + dx[i] * ds
+      y[i] = y[i-1] + dy[i] * ds
+    
+    # For clockwise, negate y
+    if self.clockwise:
+      y = -y
+      dy = -dy
+    
+    # Tangent vectors (already unit vectors from cos/sin)
+    tx = dx
+    ty = dy
+    
+    if self.clockwise:
+      ty = -ty
+    
+    # Width taper
+    width = np.linspace(self.ws, self.we, self.N)
+    
+    # Set spine parameters
+    self.c_x = x
+    self.c_y = y
+    self.w_l = width / 2.0
+    self.w_r = width / 2.0
+    self.t_x = tx
+    self.t_y = ty
+
+class ArchimedeanSpiral2(SpineBase):
+  """
+  Generates a PCell for an Archimedean spiral with integrated Euler spiral connector.
+  
+  This component is designed for spiraling inwards and includes:
+  1. An Euler spiral connector that transitions from straight (0 curvature) to the
+     spiral's starting curvature
+  2. The Archimedean spiral itself
+  
+  The complete structure starts at (0, 0) with a horizontal tangent pointing right,
+  transitions smoothly through the Euler connector, and then spirals inward.
+  
+  Attributes:
+      r0 (float): Starting radius of the Archimedean spiral portion.
+      radius_per_turn (float): Radial distance between successive turns.
+      turns (float): Number of complete turns of the spiral.
+      clockwise (bool): If True, spiral goes clockwise; if False, counterclockwise.
+      ws (float): Width at the start (straight section).
+      we (float): Width at the end (spiral center).
+      N_connector (int): Number of discretization points for the connector.
+      N_spiral (int): Number of discretization points for the spiral.
+  """
+  
+  def __init__(self):
+    super(ArchimedeanSpiral2, self).__init__()
+    
+    self.param("r0", self.TypeDouble, "Starting radius", default = 10)
+    self.param("radius_per_turn", self.TypeDouble, "Radius increase per turn", default = 5)
+    self.param("turns", self.TypeDouble, "Number of turns", default = 3)
+    self.param("clockwise", self.TypeBoolean, "Clockwise", default = False)
+    self.param("ws", self.TypeDouble, "Width start", default = 1)
+    self.param("we", self.TypeDouble, "Width end", default = 1)
+    self.param("N_connector", self.TypeInt, "N connector", default = 301)
+    self.param("N_spiral", self.TypeInt, "N spiral", default = 501)
+    
+  def calculate_target_curvature(self):
+    """
+    Calculates the curvature at the starting point of the Archimedean spiral.
+    
+    For an Archimedean spiral r(θ) = r0 + a*θ, the curvature κ is:
+    κ = (r² + 2(dr/dθ)² - r(d²r/dθ²)) / (r² + (dr/dθ)²)^(3/2)
+    
+    At θ = 0: r = r0, dr/dθ = a, d²r/dθ² = 0
+    κ₀ = (r0² + 2a²) / (r0² + a²)^(3/2)
+    
+    Returns:
+        float: Curvature at the start of the Archimedean spiral
+    """
+    a = self.radius_per_turn / (2.0 * np.pi)
+    r = self.r0
+    
+    kappa = (r**2 + 2*a**2) / (r**2 + a**2)**(3/2)
+    
+    return kappa
+  
+  def calculate_connector_length(self):
+    """
+    Calculates the arc length of the Euler spiral connector.
+    
+    For an Euler spiral from curvature 0 to κ_target over 90 degrees:
+    L = 2 * (π/2) / κ_target = π / κ_target
+    
+    Returns:
+        float: Arc length of the connector
+    """
+    kappa_target = self.calculate_target_curvature()
+    theta_total = np.pi / 2.0  # 90 degrees
+    
+    L = 2.0 * theta_total / kappa_target
+    
+    return L
+  
+  def calculate_spiral_arc_length(self):
+    """
+    Calculates the total arc length of the Archimedean spiral portion.
+    
+    Returns:
+        float: Total arc length of the spiral
+    """
+    a = self.radius_per_turn / (2.0 * np.pi)
+    theta_max = 2.0 * np.pi * self.turns
+    
+    if a &gt; 0:
+      u1 = self.r0 / a
+      u2 = self.r0 / a + theta_max
+      
+      def arc_length_term(u):
+        return u * np.sqrt(1 + u**2) + np.arcsinh(u)
+      
+      total_length = (a / 2.0) * (arc_length_term(u2) - arc_length_term(u1))
+    else:
+      # If a = 0, it's a circle
+      total_length = self.r0 * theta_max
+    
+    return total_length
+  
+  def display_text_impl(self):
+    connector_length = self.calculate_connector_length()
+    spiral_length = self.calculate_spiral_arc_length()
+    total_length = connector_length + spiral_length
+    direction = "CW" if self.clockwise else "CCW"
+    
+    return "ArchimedeanSpiral2(r0={r0}, Δr={dr}/turn, turns={t}, {dir}, L_total={L:.2f}, W=({ws},{we}))".format(
+        r0=self.r0, dr=self.radius_per_turn, t=self.turns, dir=direction, 
+        L=total_length, ws=self.ws, we=self.we)
+  
+  def generate_connector(self):
+    """
+    Generates the Euler spiral connector portion.
+    
+    Returns:
+        tuple: (x, y, tx, ty, width) arrays for the connector
+    """
+    # Calculate target curvature and arc length
+    kappa_target = self.calculate_target_curvature()
+    L = self.calculate_connector_length()
+    
+    # Arc length parameter
+    s = np.linspace(0, L, self.N_connector)
+    
+    # For Euler spiral: curvature κ(s) = κ_max * s / L
+    kappa_s = kappa_target * s / L
+    
+    # Angle at each point: φ(s) = (1/2) * κ_max * s² / L
+    phi = 0.5 * kappa_target * s**2 / L
+    
+    # Integrate to get coordinates
+    dx = np.cos(phi)
+    dy = np.sin(phi)
+    
+    # Numerical integration
+    x = np.zeros(self.N_connector)
+    y = np.zeros(self.N_connector)
+    
+    for i in range(1, self.N_connector):
+      ds = s[i] - s[i-1]
+      x[i] = x[i-1] + dx[i] * ds
+      y[i] = y[i-1] + dy[i] * ds
+    
+    # For clockwise, negate y
+    if self.clockwise:
+      y = -y
+    
+    # Tangent vectors
+    tx = dx
+    ty = dy
+    
+    if self.clockwise:
+      ty = -dy
+    
+    # Width - taper over the connector
+    # Calculate what fraction of total width change occurs in connector
+    total_N = self.N_connector + self.N_spiral
+    width = np.linspace(self.ws, self.ws + (self.we - self.ws) * self.N_connector / total_N, 
+                       self.N_connector)
+    
+    return x, y, tx, ty, width
+  
+  def generate_spiral(self, x_offset, y_offset):
+      """
+      Generates the Archimedean spiral portion starting from theta=0 
+      to align with the connector's vertical exit.
+      """
+      a = self.radius_per_turn / (2.0 * np.pi)
+      theta_max = 2.0 * np.pi * self.turns
+      theta = np.linspace(0, theta_max, self.N_spiral)
+      r = self.r0 + a * theta
+      
+      # Calculate Cartesian coordinates starting at (r0, 0)
+      # This puts the initial tangent in the vertical direction
+      x = r * np.cos(theta)
+      y = r * np.sin(theta)
+      
+      if self.clockwise:
+        y = -y
+        
+      # Apply offsets to dock the spiral start point to the connector end point
+      # Since spiral starts at (r0, 0), we subtract r0 from the x_offset
+      x_final = x + (x_offset - self.r0)
+      y_final = y + y_offset
+      
+      # Calculate tangents: dx/dtheta and dy/dtheta
+      dx_dtheta = a * np.cos(theta) - r * np.sin(theta)
+      dy_dtheta = a * np.sin(theta) + r * np.cos(theta)
+      
+      if self.clockwise:
+        dy_dtheta = -dy_dtheta
+        
+      norm = np.sqrt(dx_dtheta**2 + dy_dtheta**2)
+      tx = dx_dtheta / norm
+      ty = dy_dtheta / norm
+      
+      # Width calculation
+      total_N = self.N_connector + self.N_spiral
+      width_start = self.ws + (self.we - self.ws) * self.N_connector / total_N
+      width = np.linspace(width_start, self.we, self.N_spiral)
+      
+      return x_final, y_final, tx, ty, width
+  
+  def set_spine(self):
+      """
+      Calculates and sets the spine geometry for the complete structure.
+      """
+      # 1. Generate Euler connector
+      # This ends at (x_end, y_end) with tangent (0, 1) if CCW or (0, -1) if CW
+      x_conn, y_conn, tx_conn, ty_conn, w_conn = self.generate_connector()
+      
+      x_end = x_conn[-1]
+      y_end = y_conn[-1]
+      
+      # 2. Generate Archimedean spiral
+      # We pass the raw end coordinates; generate_spiral handles the internal r0 shift
+      x_spiral, y_spiral, tx_spiral, ty_spiral, w_spiral = self.generate_spiral(x_end, y_end)
+      
+      # 3. Combine connector and spiral
+      # Use [1:] to skip the redundant first point of the spiral
+      self.c_x = np.concatenate([x_conn, x_spiral[1:]])
+      self.c_y = np.concatenate([y_conn, y_spiral[1:]])
+      self.t_x = np.concatenate([tx_conn, tx_spiral[1:]])
+      self.t_y = np.concatenate([ty_conn, ty_spiral[1:]])
+      
+      width = np.concatenate([w_conn, w_spiral[1:]])
+      self.w_l = width / 2.0
+      self.w_r = width / 2.0
+       
 class SpineLib(pya.Library):
   """
   Library for this module
@@ -1138,10 +2101,15 @@ class SpineLib(pya.Library):
     self.layout().register_pcell("CircularLinear", CircularLinear())
     self.layout().register_pcell("BezierLinear", BezierLinear())
     self.layout().register_pcell("Superellipse90", Superellipse90())
+    self.layout().register_pcell("TaperSuperellipse90", TaperSuperellipse90())
     self.layout().register_pcell("Superellipse180", Superellipse180())
     self.layout().register_pcell("BezierSBendOpt", BezierSBendOpt())
     self.layout().register_pcell("CornuSpiral", CornuSpiral())
-
+    self.layout().register_pcell("EulerBend", EulerBend())
+    self.layout().register_pcell("Euler90", Euler90())  
+    self.layout().register_pcell("ArchimedeanSpiral", ArchimedeanSpiral())  
+    self.layout().register_pcell("ArchimedeanSpiral2", ArchimedeanSpiral2())   
+    self.layout().register_pcell("ArchimedeanConnector", ArchimedeanConnector())   
     
     self.register("Spine") 
 SpineLib()</text>

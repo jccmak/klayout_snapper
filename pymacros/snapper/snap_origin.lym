@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Adjust origin to selected object</description>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <priority>0</priority>
+ <shortcut>Alt+O</shortcut>
+ <show-in-menu>true</show-in-menu>
+ <group-name>obj</group-name>
+ <menu-path>snapper_menu.snap_menu.end</menu-path>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>import pya
+
+'''
+snap_origin
+snapper v0.0.2
+Copyright 2026 Jason Mak
+
+This file is part of snapper.
+
+snapper is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+snapper is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with snapper. If not, see https://www.gnu.org/licenses/. 
+
+-------------
+
+  Realign the origin of the active cell based on the current selection.
+
+  Behaviour depends on what is selected:
+
+  Case 1 - Shape (polygon/box/path) at the top level of the current cell:
+    The edge of the selected shape closest to the cursor is found. All shapes
+    and instances in the current cell are translated so that the center of that
+    edge lands at (0, 0).
+
+  Case 2 - Cell instance directly inside the current cell:
+    All shapes and instances in the current cell are translated so that the
+    origin of the selected instance lands at (0, 0). This effectively aligns
+    the current cell's coordinate system to the child cell's origin.
+
+  Case 3 - Shape or instance nested inside a child instance (sel_obj.path depth &gt; 1):
+    The accumulated transform chain is used to bring the relevant geometry
+    (closest edge center for shapes, or child origin for instances) up to the
+    current cell's coordinate system. Everything in the current cell is then
+    translated so that point lands at (0, 0).
+
+  In all cases the operation is a pure translation of every top-level shape
+  and instance in the active cell - no hierarchy is modified.
+
+  Notes on instance position resolution
+  --------------------------------------
+  KLayout's specific_cplx_trans() on an InstElement reflects the position
+  relative to the cellview context, and returns identity for a directly-
+  selected top-level instance (path depth 1). The correct approach is:
+    - path depth 1: read sel_inst.cplx_trans directly, which holds the true
+      placement transform of the instance in the current cell.
+    - path depth &gt; 1: use sel_inst.cplx_trans for the innermost instance and
+      accumulate specific_cplx_trans() for the outer ancestors (all elements
+      of sel_obj.path except the last), resolving everything into the current
+      cell's coordinate system.
+
+  Arguments
+  ---------
+  :verbose: &lt;bool&gt; If True, print debug information to stdout: selection
+            details, cursor position, accumulated transforms, candidate edges
+            and their centers, the chosen target point, and the applied
+            translation vector.
+
+  GUI Inputs
+  ----------
+  Exactly 1 selected object.
+'''
+
+from snapper import snap
+
+snap.snap_origin()
+</text>
+</klayout-macro>
