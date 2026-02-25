@@ -2084,6 +2084,111 @@ class ArchimedeanSpiral2(SpineBase):
       width = np.concatenate([w_conn, w_spiral[1:]])
       self.w_l = width / 2.0
       self.w_r = width / 2.0
+
+class DampedChirp(SpineBase):
+  """
+  Generates a PCell for the damped chirp function: y = exp(-a*x) * sin((kx * x)^p).
+  Features a width taper, x-scaling for frequency adjustment, and dynamic
+  calculation of the minimum radius of curvature.
+  """
+  
+  def __init__(self):
+    super(DampedChirp, self).__init__()
+    
+    self.param("a", self.TypeDouble, "Damping factor (a)", default=0.2)
+    self.param("p", self.TypeDouble, "Frequency power (p)", default=3.0)
+    self.param("kx", self.TypeDouble, "X-scaling (kx)", default=1.0)
+    self.param("L", self.TypeDouble, "Total Length (L)", default=10.0)
+    self.param("ws", self.TypeDouble, "Start Width", default=1.0)
+    self.param("we", self.TypeDouble, "End Width", default=0.2)
+    self.param("N", self.TypeInt, "Number of points", default=1000)
+    
+  def _calculate_kinematics(self):
+    """
+    Computes coordinates and exact analytical derivatives.
+    Returns x, y, dy_dx, and d2y_dx2 arrays.
+    """
+    x = np.linspace(0, self.L, self.N)
+    u = self.kx * x
+    
+    # To prevent 0**negative evaluation warnings at the origin when p &lt; 2,
+    # we replace 0 with a tiny epsilon. We manually correct the origin later.
+    u_safe = np.where(u == 0, 1e-12, u)
+    
+    y = np.exp(-self.a * x) * np.sin(u**self.p)
+    
+    # First derivative (y')
+    dy_dx = np.exp(-self.a * x) * (
+        -self.a * np.sin(u**self.p) + 
+        self.p * (u_safe**(self.p - 1)) * self.kx * np.cos(u**self.p)
+    )
+    
+    # Second derivative (y'')
+    term1 = (self.a**2 - (self.p**2) * (u_safe**(2*self.p - 2)) * (self.kx**2)) * np.sin(u**self.p)
+    term2 = (self.p * (self.p - 1) * (u_safe**(self.p - 2)) * (self.kx**2) - 
+             2 * self.a * self.p * (u_safe**(self.p - 1)) * self.kx) * np.cos(u**self.p)
+    
+    d2y_dx2 = np.exp(-self.a * x) * (term1 + term2)
+    
+    # Explicitly fix mathematical boundaries at x=0
+    if self.p &gt; 2:
+        dy_dx[0] = 0.0
+        d2y_dx2[0] = 0.0
+    elif self.p == 2:
+        dy_dx[0] = 0.0
+        d2y_dx2[0] = 2 * (self.kx**2)
+    elif self.p == 1:
+        dy_dx[0] = self.kx
+        d2y_dx2[0] = -2 * self.a * self.kx
+        
+    return x, y, dy_dx, d2y_dx2
+
+  def calculate_R_min(self):
+    """
+    Calculates the minimum radius of curvature along the generated path.
+    """
+    x, y, dy_dx, d2y_dx2 = self._calculate_kinematics()
+    
+    # kappa = |y''| / (1 + y'^2)^(3/2)
+    kappa = np.abs(d2y_dx2) / (1.0 + dy_dx**2)**1.5
+    max_kappa = np.max(kappa)
+    
+    if max_kappa &gt; 1e-10:
+        return 1.0 / max_kappa
+    return float('inf')
+
+  def display_text_impl(self):
+    """
+    Displays the parameters and the calculated minimum radius of curvature.
+    """
+    R_min = self.calculate_R_min()
+    return "DampedChirp(kx={kx:.1f}, L={L:.1f}, W=({ws:.1f}, {we:.1f}), Rmin={R:.2f})".format(
+        kx=self.kx, L=self.L, ws=self.ws, we=self.we, R=R_min)
+
+  def set_spine(self):
+    """
+    Assigns the centerline, width, and tangents to the SpineBase variables.
+    """
+    x, y, dy_dx, _ = self._calculate_kinematics()
+    
+    # Base tangent vectors
+    dx = np.ones_like(x)
+    dy = dy_dx
+    
+    # Normalize tangent vectors to magnitude 1
+    norm = np.sqrt(dx**2 + dy**2)
+    tx = dx / norm
+    ty = dy / norm
+    
+    self.c_x = x
+    self.c_y = y
+    self.t_x = tx
+    self.t_y = ty
+    
+    # [cite_start]Calculate linearly tapered widths [cite: 37]
+    width = np.linspace(self.ws, self.we, self.N)
+    self.w_l = width / 2.0
+    self.w_r = width / 2.0
        
 class SpineLib(pya.Library):
   """
@@ -2110,7 +2215,7 @@ class SpineLib(pya.Library):
     self.layout().register_pcell("ArchimedeanSpiral", ArchimedeanSpiral())  
     self.layout().register_pcell("ArchimedeanSpiral2", ArchimedeanSpiral2())   
     self.layout().register_pcell("ArchimedeanConnector", ArchimedeanConnector())   
-    
+    self.layout().register_pcell("DampedChirp", DampedChirp()) 
     self.register("Spine") 
 SpineLib()</text>
 </klayout-macro>
